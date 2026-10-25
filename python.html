@@ -174,22 +174,31 @@ body.embed header h1 { display: none; }
   background:var(--bad); color:#fff; padding:10px 16px; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.35); font-weight:600; cursor:pointer; }
 #toast small { display:block; font-weight:400; opacity:.92; margin-top:2px; }
 
-/* resizable boxes */
-main { position: relative; }
-.split { position: absolute; z-index: 4; touch-action: none; display: none; }
-.split.col { width: 16px; cursor: col-resize; }
-.split.row { height: 16px; cursor: row-resize; }
-.split::before { content: ""; position: absolute; background: var(--border); border-radius: 3px; transition: background .15s; }
-.split.col::before { left: 6px; top: 50%; width: 4px; height: 38px; margin-top: -19px; }
-.split.row::before { top: 6px; left: 50%; height: 4px; width: 38px; margin-left: -19px; }
-.split::after { content: ""; position: absolute; background: var(--accent); border-radius: 2px; opacity: 0; transition: opacity .15s; }
-.split.col::after { left: 7px; top: 0; bottom: 0; width: 2px; }
-.split.row::after { top: 7px; left: 0; right: 0; height: 2px; }
-.split:hover::before, .split.on::before { background: var(--accent); }
-.split:hover::after, .split.on::after { opacity: .55; }
-body.dragging { user-select: none; cursor: grabbing; }
-body.dragging iframe { pointer-events: none; }
-@media (max-width: 900px) { .split { display: none !important; } }
+/* docking layout */
+main.dk { display: flex; flex-direction: column; gap: 0; }
+.dk-split { display: flex; min-width: 0; min-height: 0; }
+.dk-split.h { flex-direction: row; } .dk-split.v { flex-direction: column; }
+.dk-split > .panel { min-width: 0; min-height: 0; }
+.dk-gut { flex: none; position: relative; touch-action: none; z-index: 3; }
+.dk-gut.h { width: 12px; cursor: col-resize; } .dk-gut.v { height: 12px; cursor: row-resize; }
+.dk-gut::before { content: ""; position: absolute; background: var(--border); border-radius: 3px; transition: background .15s; }
+.dk-gut.h::before { left: 4px; top: 50%; width: 4px; height: 36px; margin-top: -18px; }
+.dk-gut.v::before { top: 4px; left: 50%; height: 4px; width: 36px; margin-left: -18px; }
+.dk-gut:hover::before, .dk-gut.on::before { background: var(--accent); }
+#dkhold { display: none; }
+#dktray { display: none; flex: none; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+#dktray.on { display: flex; }
+#dktray button { padding: 3px 12px; font-size: 12.5px; border-radius: 99px; }
+.panel > h2 { cursor: grab; user-select: none; }
+.panel > h2 .wc { margin-left: auto; display: inline-flex; gap: 4px; }
+.panel > h2 .right + .wc { margin-left: 6px; }
+.wb { padding: 0 7px !important; min-height: 0 !important; height: 22px; line-height: 1; font-size: 13px; border-radius: 6px !important; color: var(--muted) !important; }
+.wb:hover { color: var(--text) !important; }
+.dk-zone { position: fixed; z-index: 60; pointer-events: none; background: var(--accent-soft); border: 2px dashed var(--accent); border-radius: 10px; display: none; }
+.dk-ghost { position: fixed; z-index: 61; pointer-events: none; padding: 4px 12px; background: var(--accent); color: #fff; border-radius: 8px; font-size: 12.5px; opacity: .92; }
+body.dragging { user-select: none; cursor: grabbing !important; }
+body.dragging * { cursor: grabbing !important; }
+@media (max-width: 900px) { #layoutSel, .wc, #dktray { display: none !important; } .panel > h2 { cursor: default; } }
 </style>
 </head>
 <body>
@@ -967,55 +976,160 @@ setTab('code');
 })();
 </script>
 <script>
-/* draggable splitters between the boxes (desktop / tablet) */
-(function initSplitters(cfg) {
-  const main = document.querySelector('main'), q = s => document.querySelector(s), R = s => q(s).getBoundingClientRect();
-  const mq = matchMedia('(max-width:900px)');
-  let cols = cfg.defaults.cols.slice(), rows = cfg.defaults.rows.slice();
-  try { const s = JSON.parse(localStorage.getItem(cfg.key)); if (s && s.cols && s.rows) { cols = s.cols; rows = s.rows; } } catch (e) {}
-  const mk = () => { const d = document.createElement('div'); d.title = 'Drag to resize - double-click to reset'; main.appendChild(d); return d; };
-  const colH = mk(); colH.className = 'split col';
-  const rowH = cfg.rowLines.map(() => { const d = mk(); d.className = 'split row'; return d; });
-  function save() { try { localStorage.setItem(cfg.key, JSON.stringify({ cols, rows })); } catch (e) {} }
-  function place() {
-    if (mq.matches) return;
-    const m = main.getBoundingClientRect(), gap = parseFloat(getComputedStyle(main).columnGap) || 12;
-    const top = R(cfg.rows[0]).top - m.top, bottom = R(cfg.rows[cfg.rows.length - 1]).bottom - m.top;
-    colH.style.cssText = `display:block;left:${R(cfg.cols[0]).right - m.left + gap / 2 - 8}px;top:${top}px;height:${bottom - top}px`;
-    rowH.forEach((h, i) => {
-      const L = cfg.rowLines[i], rs = L.span.map(R);
-      const left = Math.min(...rs.map(x => x.left)), right = Math.max(...rs.map(x => x.right));
-      h.style.cssText = `display:block;top:${R(L.above).bottom - m.top + gap / 2 - 8}px;left:${left - m.left}px;width:${right - left}px`;
-    });
+/* ===== docking layout manager: drag a title bar to dock, drag gutters to resize, minimise / maximise, presets ===== */
+(function initDock(cfg) {
+  const main = document.querySelector('main'), mq = matchMedia('(max-width:900px)');
+  const panels = {}; cfg.panels.forEach(id => { panels[id] = document.getElementById(id); });
+  const elOf = new WeakMap();
+  const B = s => typeof s === 'string' ? { t: 'p', id: s } : { t: 's', dir: s.d, kids: s.k.map(([w, x]) => Object.assign(B(x), { w })) };
+  const fresh = name => ({ preset: name, tree: B(cfg.presets[name]), hidden: [], solo: null });
+  const ids = (n, o = []) => { if (n.t === 'p') o.push(n.id); else n.kids.forEach(k => ids(k, o)); return o; };
+  const valid = t => { const a = ids(t).sort().join(), b = cfg.panels.slice().sort().join(); return a === b; };
+  let st = null;
+  try { const s = JSON.parse(localStorage.getItem(cfg.key)); if (s && s.tree && valid(s.tree)) st = s; } catch (e) {}
+  if (!st) st = fresh(cfg.def);
+  st.hidden = st.hidden || []; st.solo = st.solo || null;
+  const save = () => { try { localStorage.setItem(cfg.key, JSON.stringify(st)); } catch (e) {} };
+  const vis = n => n.t === 'p' ? (st.solo ? n.id === st.solo : !st.hidden.includes(n.id)) : n.kids.some(vis);
+
+  const hold = document.createElement('div'); hold.id = 'dkhold'; main.appendChild(hold);
+  const tray = document.createElement('div'); tray.id = 'dktray'; main.appendChild(tray);
+  let root = null;
+  const label = id => { const c = panels[id].querySelector('h2').cloneNode(true); c.querySelectorAll('.num,.right,.wc').forEach(x => x.remove()); return c.textContent.trim(); };
+
+  function build(n) {
+    if (n.t === 'p') { const el = panels[n.id]; el.style.flex = `${n.w || 1} 1 0`; elOf.set(n, el); return el; }
+    const el = document.createElement('div'); el.className = 'dk-split ' + n.dir; el.style.flex = `${n.w || 1} 1 0`; elOf.set(n, el);
+    const kids = n.kids.filter(vis);
+    kids.forEach((k, i) => { if (i) el.appendChild(gutter(n, kids[i - 1], k)); el.appendChild(build(k)); });
+    return el;
   }
-  function apply() {
-    if (mq.matches) { main.style.gridTemplateColumns = main.style.gridTemplateRows = ''; return; }
-    main.style.gridTemplateColumns = cols.map(c => `minmax(0,${c}fr)`).join(' ');
-    main.style.gridTemplateRows = rows.map(r => `minmax(0,${r}fr)`).join(' ');
-    place();
+  function render() {
+    if (mq.matches) {
+      main.classList.remove('dk'); if (root) { root.remove(); root = null; }
+      cfg.panels.forEach(id => { panels[id].style.flex = ''; main.insertBefore(panels[id], hold); });
+      return;
+    }
+    main.classList.add('dk');
+    cfg.panels.forEach(id => hold.appendChild(panels[id]));
+    const r = build(st.tree); r.style.flex = '1 1 0'; r.style.minHeight = '0';
+    if (root) root.remove(); root = r; main.insertBefore(r, tray);
+    tray.innerHTML = '';
+    st.hidden.filter(id => !st.solo).forEach(id => { const b = document.createElement('button'); b.textContent = '▢ ' + label(id); b.title = 'Restore this box'; b.onclick = () => { st.hidden = st.hidden.filter(x => x !== id); save(); render(); }; tray.appendChild(b); });
+    if (st.solo) { const b = document.createElement('button'); b.className = 'primary'; b.textContent = '⤡ Back to layout'; b.onclick = () => { st.solo = null; save(); render(); }; tray.appendChild(b); }
+    tray.classList.toggle('on', tray.children.length > 0);
+    cfg.panels.forEach(id => { const m = panels[id].querySelector('[data-a=max]'); if (m) m.textContent = st.solo === id ? '⤡' : '⛶'; });
+    sel.title = 'Layout: ' + (st.preset || 'custom');
   }
-  function wire(h, kind, i) {
-    h.addEventListener('pointerdown', e => {
-      e.preventDefault(); h.setPointerCapture(e.pointerId); h.classList.add('on'); document.body.classList.add('dragging');
-      const sizes = kind === 'col' ? cfg.cols.map(s => R(s).width) : cfg.rows.map(s => R(s).height);
-      const start = kind === 'col' ? e.clientX : e.clientY, a = sizes[i], b = sizes[i + 1], min = 90;
+
+  function gutter(node, a, b) {
+    const g = document.createElement('div'); g.className = 'dk-gut ' + node.dir; g.title = 'Drag to resize · double-click to reset the layout';
+    g.addEventListener('pointerdown', e => {
+      e.preventDefault(); g.setPointerCapture(e.pointerId); g.classList.add('on'); document.body.classList.add('dragging');
+      const horiz = node.dir === 'h', A = elOf.get(a), Bn = elOf.get(b), size = x => horiz ? x.getBoundingClientRect().width : x.getBoundingClientRect().height;
+      const sa = size(A), sb = size(Bn), ws = (a.w || 1) + (b.w || 1), start = horiz ? e.clientX : e.clientY, min = 80;
       const move = ev => {
-        let d = (kind === 'col' ? ev.clientX : ev.clientY) - start;
-        d = Math.max(min - a, Math.min(b - min, d));
-        const s = sizes.slice(); s[i] = a + d; s[i + 1] = b - d;
-        if (kind === 'col') cols = s; else rows = s;
-        apply();
+        let d = (horiz ? ev.clientX : ev.clientY) - start; d = Math.max(min - sa, Math.min(sb - min, d));
+        a.w = ws * (sa + d) / (sa + sb); b.w = ws - a.w; A.style.flex = `${a.w} 1 0`; Bn.style.flex = `${b.w} 1 0`;
       };
-      const up = () => { h.classList.remove('on'); document.body.classList.remove('dragging'); h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); save(); };
-      h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+      const up = () => { g.classList.remove('on'); document.body.classList.remove('dragging'); g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up); st.preset = st.preset || 'custom'; save(); };
+      g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
     });
-    h.addEventListener('dblclick', () => { cols = cfg.defaults.cols.slice(); rows = cfg.defaults.rows.slice(); apply(); save(); });
+    g.addEventListener('dblclick', () => { const h = st.hidden; st = fresh(cfg.presets[st.preset] ? st.preset : cfg.def); st.hidden = h; save(); render(); });
+    return g;
   }
-  wire(colH, 'col', 0); rowH.forEach((h, i) => wire(h, 'row', i));
-  new ResizeObserver(place).observe(main);
-  mq.addEventListener('change', apply);
-  apply(); setTimeout(place, 300);
-})({ key: 'pyLab.split', cols: ['#p-code', '#p-steps'], rows: ['#p-steps', '#p-visual', '#p-result'], rowLines: [{ above: '#p-steps', span: ['#p-steps'] }, { above: '#p-visual', span: ['#p-code', '#p-steps'] }], defaults: { cols: [1.05, 1], rows: [1, 1, 0.72] } });
+
+  /* ---- tree surgery ---- */
+  const find = (n, id, parent = null) => { if (n.t === 'p') return n.id === id ? { n, parent } : null; for (const k of n.kids) { const r = find(k, id, n); if (r) return r; } return null; };
+  const parentOf = (n, t = st.tree) => { if (t.t === 'p') return null; if (t.kids.includes(n)) return t; for (const k of t.kids) { const r = parentOf(n, k); if (r) return r; } return null; };
+  function detach(id) {
+    const { n, parent } = find(st.tree, id); parent.kids.splice(parent.kids.indexOf(n), 1);
+    if (parent.kids.length === 1) { const only = parent.kids[0], gp = parentOf(parent); only.w = parent.w; if (!gp) st.tree = only; else gp.kids[gp.kids.indexOf(parent)] = only; }
+    return n;
+  }
+  function dock(src, tgt, zone) {
+    if (zone === 'center') { const a = find(st.tree, src).n, b = find(st.tree, tgt).n; [a.id, b.id] = [b.id, a.id]; }
+    else {
+      const n = detach(src), { n: t, parent } = find(st.tree, tgt), dir = zone === 'left' || zone === 'right' ? 'h' : 'v', first = zone === 'left' || zone === 'top', tw = t.w || 1;
+      if (parent && parent.dir === dir) { t.w = tw / 2; n.w = tw / 2; parent.kids.splice(parent.kids.indexOf(t) + (first ? 0 : 1), 0, n); }
+      else { const s = { t: 's', dir, w: tw, kids: first ? [n, t] : [t, n] }; n.w = 1; t.w = 1; if (!parent) st.tree = s; else parent.kids[parent.kids.indexOf(t)] = s; }
+    }
+    st.preset = 'custom'; save(); render();
+  }
+
+  /* ---- drag a title bar to dock ---- */
+  const zoneEl = document.createElement('div'); zoneEl.className = 'dk-zone'; document.body.appendChild(zoneEl);
+  function targetAt(x, y, self) {
+    for (const el of document.elementsFromPoint(x, y)) {
+      const p = el.closest && el.closest('.panel'); if (!p || p.id === self || !panels[p.id]) continue;
+      const r = p.getBoundingClientRect(), fx = (x - r.left) / r.width, fy = (y - r.top) / r.height;
+      let zone = 'center';
+      if (!(fx > .28 && fx < .72 && fy > .28 && fy < .72)) { const d = { left: fx, right: 1 - fx, top: fy, bottom: 1 - fy }; zone = Object.keys(d).sort((a, b) => d[a] - d[b])[0]; }
+      return { id: p.id, zone, r };
+    }
+    return null;
+  }
+  function showZone(t) {
+    if (!t) { zoneEl.style.display = 'none'; return; }
+    const { r, zone } = t; let L = r.left, T = r.top, W = r.width, H = r.height;
+    if (zone === 'left') W /= 2; else if (zone === 'right') { L += W / 2; W /= 2; } else if (zone === 'top') H /= 2; else if (zone === 'bottom') { T += H / 2; H /= 2; }
+    Object.assign(zoneEl.style, { display: 'block', left: L + 'px', top: T + 'px', width: W + 'px', height: H + 'px' });
+  }
+  document.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || mq.matches) return;
+    const h2 = e.target.closest('.panel > h2'); if (!h2 || e.target.closest('button,input,select,label,a,textarea')) return;
+    const pid = h2.parentElement.id; if (!panels[pid] || st.solo) return;
+    const sx = e.clientX, sy = e.clientY; let active = false, ghost = null, over = null;
+    const mv = ev => {
+      if (!active) { if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return; active = true; document.body.classList.add('dragging'); ghost = document.createElement('div'); ghost.className = 'dk-ghost'; ghost.textContent = '⠿ ' + label(pid); document.body.appendChild(ghost); }
+      ghost.style.left = ev.clientX + 12 + 'px'; ghost.style.top = ev.clientY + 12 + 'px';
+      over = targetAt(ev.clientX, ev.clientY, pid); showZone(over);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+      if (!active) return; document.body.classList.remove('dragging'); ghost.remove(); showZone(null);
+      if (over) dock(pid, over.id, over.zone);
+    };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+  });
+
+  /* ---- minimise / maximise buttons ---- */
+  cfg.panels.forEach(id => {
+    const h2 = panels[id].querySelector('h2'), wc = document.createElement('span'); wc.className = 'wc';
+    wc.innerHTML = '<button class="wb" data-a="min" title="Minimise (restore from the bar below)">▁</button><button class="wb" data-a="max" title="Maximise / restore">⛶</button>';
+    h2.appendChild(wc);
+    wc.addEventListener('click', e => {
+      const a = e.target.closest('button'); if (!a) return;
+      if (a.dataset.a === 'min') { if (cfg.panels.filter(x => !st.hidden.includes(x)).length <= 1) return; st.hidden.push(id); }
+      else st.solo = st.solo === id ? null : id;
+      save(); render();
+    });
+    h2.addEventListener('dblclick', e => { if (!e.target.closest('button,input,select,label')) { st.solo = st.solo === id ? null : id; save(); render(); } });
+  });
+
+  /* ---- layout menu ---- */
+  const sel = document.createElement('select'); sel.id = 'layoutSel'; sel.setAttribute('aria-label', 'Layout');
+  sel.innerHTML = '<option value="">▦ Layout</option>' + Object.keys(cfg.presets).map(k => `<option value="p:${k}">${k}</option>`).join('') + '<option value="restore">▢ Restore all boxes</option><option value="reset">⟲ Reset layout</option>';
+  sel.onchange = () => {
+    const v = sel.value; sel.value = '';
+    if (v.startsWith('p:')) st = fresh(v.slice(2));
+    else if (v === 'restore') { st.hidden = []; st.solo = null; }
+    else if (v === 'reset') st = fresh(cfg.def);
+    else return;
+    save(); render();
+  };
+  const sp = document.querySelector('header .spacer'); if (sp) sp.after(sel);
+  mq.addEventListener('change', render);
+  render();
+})({ key: 'pyLab.dock2', def: 'Classic', panels: ['p-code', 'p-steps', 'p-visual', 'p-result', 'p-output'],
+  presets: {
+    'Classic': { d: 'v', k: [[1.75, { d: 'h', k: [[1.05, 'p-code'], [1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual']] }]] }], [.72, { d: 'h', k: [[1.05, 'p-result'], [1, 'p-output']] }]] },
+    'Code focus': { d: 'h', k: [[2, 'p-code'], [1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual'], [.7, 'p-result'], [.7, 'p-output']] }]] },
+    'Stacked': { d: 'v', k: [[1.2, 'p-code'], [1.2, { d: 'h', k: [[1, 'p-steps'], [1, 'p-visual']] }], [.8, { d: 'h', k: [[1, 'p-result'], [1, 'p-output']] }]] },
+    'Three columns': { d: 'h', k: [[1, { d: 'v', k: [[2, 'p-code'], [1, 'p-output']] }], [1, 'p-steps'], [1, { d: 'v', k: [[1.3, 'p-visual'], [1, 'p-result']] }]] },
+    'Editor on top': { d: 'v', k: [[1, 'p-code'], [1.4, { d: 'h', k: [[1, 'p-steps'], [1, 'p-visual'], [1, { d: 'v', k: [[1, 'p-result'], [1, 'p-output']] }]] }]] },
+    'Side by side': { d: 'h', k: [[1, { d: 'v', k: [[2, 'p-code'], [1, 'p-result'], [1, 'p-output']] }], [1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual']] }]] }
+  } });
 </script>
 </body>
 </html>

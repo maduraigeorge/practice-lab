@@ -197,22 +197,31 @@ body.embed header h1 { display:none; }
   #tabs button { flex-direction:row; justify-content:center; gap:4px; min-height:38px; padding:4px 2px; }
 }
 
-/* resizable boxes */
-main { position: relative; }
-.split { position: absolute; z-index: 4; touch-action: none; display: none; }
-.split.col { width: 16px; cursor: col-resize; }
-.split.row { height: 16px; cursor: row-resize; }
-.split::before { content: ""; position: absolute; background: var(--border); border-radius: 3px; transition: background .15s; }
-.split.col::before { left: 6px; top: 50%; width: 4px; height: 38px; margin-top: -19px; }
-.split.row::before { top: 6px; left: 50%; height: 4px; width: 38px; margin-left: -19px; }
-.split::after { content: ""; position: absolute; background: var(--accent); border-radius: 2px; opacity: 0; transition: opacity .15s; }
-.split.col::after { left: 7px; top: 0; bottom: 0; width: 2px; }
-.split.row::after { top: 7px; left: 0; right: 0; height: 2px; }
-.split:hover::before, .split.on::before { background: var(--accent); }
-.split:hover::after, .split.on::after { opacity: .55; }
-body.dragging { user-select: none; cursor: grabbing; }
-body.dragging iframe { pointer-events: none; }
-@media (max-width: 900px) { .split { display: none !important; } }
+/* docking layout */
+main.dk { display: flex; flex-direction: column; gap: 0; }
+.dk-split { display: flex; min-width: 0; min-height: 0; }
+.dk-split.h { flex-direction: row; } .dk-split.v { flex-direction: column; }
+.dk-split > .panel { min-width: 0; min-height: 0; }
+.dk-gut { flex: none; position: relative; touch-action: none; z-index: 3; }
+.dk-gut.h { width: 12px; cursor: col-resize; } .dk-gut.v { height: 12px; cursor: row-resize; }
+.dk-gut::before { content: ""; position: absolute; background: var(--border); border-radius: 3px; transition: background .15s; }
+.dk-gut.h::before { left: 4px; top: 50%; width: 4px; height: 36px; margin-top: -18px; }
+.dk-gut.v::before { top: 4px; left: 50%; height: 4px; width: 36px; margin-left: -18px; }
+.dk-gut:hover::before, .dk-gut.on::before { background: var(--accent); }
+#dkhold { display: none; }
+#dktray { display: none; flex: none; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+#dktray.on { display: flex; }
+#dktray button { padding: 3px 12px; font-size: 12.5px; border-radius: 99px; }
+.panel > h2 { cursor: grab; user-select: none; }
+.panel > h2 .wc { margin-left: auto; display: inline-flex; gap: 4px; }
+.panel > h2 .right + .wc { margin-left: 6px; }
+.wb { padding: 0 7px !important; min-height: 0 !important; height: 22px; line-height: 1; font-size: 13px; border-radius: 6px !important; color: var(--muted) !important; }
+.wb:hover { color: var(--text) !important; }
+.dk-zone { position: fixed; z-index: 60; pointer-events: none; background: var(--accent-soft); border: 2px dashed var(--accent); border-radius: 10px; display: none; }
+.dk-ghost { position: fixed; z-index: 61; pointer-events: none; padding: 4px 12px; background: var(--accent); color: #fff; border-radius: 8px; font-size: 12.5px; opacity: .92; }
+body.dragging { user-select: none; cursor: grabbing !important; }
+body.dragging * { cursor: grabbing !important; }
+@media (max-width: 900px) { #layoutSel, .wc, #dktray { display: none !important; } .panel > h2 { cursor: default; } }
 </style>
 </head>
 <body>
@@ -236,6 +245,7 @@ body.dragging iframe { pointer-events: none; }
   <span class="chip sand" id="conn" role="button" tabindex="0" title="Current database - click to change"><i></i><span id="connTxt">Sandbox</span></span>
   <button data-open="live" title="Connect to your PostgreSQL or MySQL / phpMyAdmin database">🔌 Connect live DB</button>
   <button data-open="schema" title="No database? Type CREATE TABLE statements or describe your tables in words">✏️ Create schema</button>
+  <button data-open="file" title="Upload a .sql dump, .tar/.tgz/.zip archive, .csv or SQLite file">📁 Upload file</button>
   <button data-open="image" title="Upload a picture of your schema / ER diagram">🖼️ Upload schema image</button>
   <button data-open="sample" title="Load the built-in shop database">📚 Sample DB</button>
 </div>
@@ -290,7 +300,7 @@ body.dragging iframe { pointer-events: none; }
   <div class="dlg">
     <header><h1 style="font-size:16px">Set up your database</h1><span class="spacer"></span><button id="dClose" aria-label="Close">✕</button></header>
     <p class="note" style="margin:8px 16px 0">Have a PostgreSQL / MySQL database? <b>Connect</b> to it. No database? <b>Create a schema</b>, <b>upload a picture</b> of one, or use the <b>sample</b> – they all run safely in your browser.</p>
-    <div class="dtabs"><button data-d="live" class="on">🔌 Live DB</button><button data-d="schema">✏️ Create schema</button><button data-d="image">🖼️ From image</button><button data-d="sample">📚 Sample</button></div>
+    <div class="dtabs"><button data-d="live" class="on">🔌 Live DB</button><button data-d="schema">✏️ Create schema</button><button data-d="file">📁 Upload file</button><button data-d="image">🖼️ From image</button><button data-d="sample">📚 Sample</button></div>
 
     <div class="dbody" id="d-live">
       <div class="warnbox" id="bridgeWarn" style="display:none"></div>
@@ -320,6 +330,14 @@ body.dragging iframe { pointer-events: none; }
       <h3>…or describe them in words <span class="note">(uses Claude)</span></h3>
       <textarea id="descText" style="height:70px" spellcheck="false" placeholder="e.g. A library with books, members and loans. Each loan links one member to one book."></textarea>
       <div class="row"><button id="descBtn">Generate schema from description</button></div>
+    </div>
+
+    <div class="dbody" id="d-file" style="display:none">
+      <h3 style="margin-top:0">Upload a database or schema file</h3>
+      <div class="box" id="fdrop">Click or drop a file here<br><span class="note">.sql dump · .tar / .tar.gz / .tgz · .zip · .csv · .sqlite / .db</span><input type="file" id="dbFile" accept=".sql,.txt,.tar,.tgz,.gz,.zip,.csv,.sqlite,.sqlite3,.db" hidden></div>
+      <p class="note">Works with dumps from <b>PostgreSQL</b> (<code class="i">pg_dump --no-owner --inserts</code>, or default <code class="i">COPY</code> format) and <b>MySQL / phpMyAdmin</b> exports. They are cleaned up automatically and loaded into the browser sandbox; anything SQLite can't run is skipped and listed. Archives may contain several .sql / .csv files. Your file never leaves your computer.
+      PostgreSQL custom/tar-format backups (<code class="i">-Fc</code>, <code class="i">-Ft</code>) can't be read – export plain SQL instead.</p>
+      <div class="msg" id="fileMsg"></div>
     </div>
 
     <div class="dbody" id="d-image" style="display:none">
@@ -587,6 +605,7 @@ async function execSQL(sql, opt = {}) {
   }
   return { ok: false, error: { message: 'Not connected. Click the connection badge at the top to connect or open the sandbox.' } };
 }
+S.extra = { fks: [], pks: [] };
 function sandboxSchema() {
   const tables = [], fks = [];
   const list = S.db.exec("SELECT name, type FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name");
@@ -597,6 +616,9 @@ function sandboxSchema() {
     if (f) f.values.forEach(r => fks.push({ from: [name, r[3]], to: [r[2], r[4] || null] }));
   });
   fks.forEach(f => { if (!f.to[1]) { const t = tables.find(t => t.name === f.to[0]); const pk = t && t.columns.find(c => c.pk); f.to[1] = pk ? pk.name : ''; } });
+  const find = n => tables.find(t => t.name.toLowerCase() === String(n).replace(/^.*\./, '').replace(/["`]/g, '').toLowerCase());
+  (S.extra.pks || []).forEach(([t, c]) => { const T = find(t); const col = T && T.columns.find(x => x.name.toLowerCase() === c.toLowerCase()); if (col) col.pk = true; });
+  (S.extra.fks || []).forEach(f => { const a = find(f.from[0]), b = find(f.to[0]); if (a && b) fks.push({ from: [a.name, f.from[1]], to: [b.name, f.to[1]] }); });
   return { tables, fks };
 }
 async function loadSQLJS() {
@@ -610,7 +632,7 @@ async function applyDDL(ddl) {
   const db = new SQL.Database();
   db.exec(ddl);
   if (S.db) S.db.close();
-  S.db = db; S.kind = 'sandbox'; S.dbType = 'sqlite'; S.token = null;
+  S.db = db; S.kind = 'sandbox'; S.dbType = 'sqlite'; S.token = null; S.extra = { fks: [], pks: [] };
   S.schema = sandboxSchema();
   store.set('sqlLab.ddl', ddl);
   setConn(); renderSchema(); refreshHighlights();
@@ -628,7 +650,7 @@ function setConn() {
   $('examples').style.display = S.kind === 'sandbox' && store.get('sqlLab.sample', '') === '1' ? '' : 'none';
 }
 const dlg = $('dlg');
-const DTABS = ['live', 'schema', 'image', 'sample'];
+const DTABS = ['live', 'schema', 'file', 'image', 'sample'];
 function openDlg(tab) { showTab(tab || (S.kind === 'live' ? 'live' : 'schema')); if (!dlg.open) dlg.showModal(); }
 function showTab(t) {
   document.querySelectorAll('.dtabs button').forEach(b => b.classList.toggle('on', b.dataset.d === t));
@@ -746,6 +768,158 @@ async function askAI(path, body, btn, wait) {
 $('readImg').onclick = () => askAI('vision', { image: S.imgData, media_type: S.imgType }, $('readImg'), 'Reading the schema with Claude… (10–40 s)');
 $('descBtn').onclick = () => { const t = $('descText').value.trim(); if (!t) { $('sandMsg').className = 'msg err'; $('sandMsg').textContent = 'Describe the tables first.'; return; } askAI('describe', { text: t }, $('descBtn'), 'Designing the schema with Claude… (10–30 s)'); };
 $('tmpl').onclick = () => { $('ddl').value = "CREATE TABLE students (\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL,\n  course_id INTEGER REFERENCES courses(id)\n);\nCREATE TABLE courses (\n  id INTEGER PRIMARY KEY,\n  title TEXT NOT NULL\n);\nINSERT INTO courses VALUES (1,'Python'),(2,'SQL');\nINSERT INTO students VALUES (1,'Asha',1),(2,'Ravi',2),(3,'Meena',1);\n"; };
+
+
+/* ================= file import (.sql / .tar / .zip / .csv / .sqlite) ================= */
+const SKIP_RE = /^(set|select\s+(pg_catalog|setval)|create\s+extension|comment\s+on|grant|revoke|alter\s+(sequence|schema|function|type|domain|database)\b|alter\s+(table|view)\s+(only\s+)?\S+\s+owner\s+to|alter\s+table\s+\S+\s+(enable|disable)\s+keys|create\s+(or\s+replace\s+)?(function|procedure|trigger|type|domain|sequence|schema|extension|rule|policy|publication|subscription)|drop\s+(schema|extension|sequence|function|type)|lock\s+tables|unlock\s+tables|use\s|delimiter|start\s+transaction|begin|commit|\\connect|create\s+database|alter\s+default)/i;
+function pgCopyToInserts(text) {
+  return text.replace(/^COPY\s+(\S+)\s*(\([^)]*\))?\s+FROM\s+stdin;?[^\n]*\n([\s\S]*?)^\\\.\s*$/gim, (m, tbl, cols, body) => {
+    const q1 = s => s === '\\N' ? 'NULL' : "'" + s.replace(/\\t/g, '\t').replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\\\/g, '\\').replace(/'/g, "''") + "'";
+    return body.split('\n').filter(l => l.length).map(l => `INSERT INTO ${tbl} ${cols || ''} VALUES (${l.split('\t').map(q1).join(', ')});`).join('\n');
+  });
+}
+function cleanStatement(st, mysql, ctx) {
+  let s = st.trim();
+  const low = s.replace(/^(\s*(--[^\n]*|\/\*[\s\S]*?\*\/)\s*)+/, '');
+  s = low;
+  if (!s || SKIP_RE.test(s)) return null;
+  s = s.replace(/\b"?public"?\./gi, '');
+  let m;
+  if ((m = /^alter\s+table\s+(?:only\s+)?(\S+)\s+add\s+(?:constraint\s+\S+\s+)?primary\s+key\s*\(([^)]*)\)/i.exec(s))) { m[2].split(',').forEach(c => ctx.extra.pks.push([m[1], c.trim().replace(/["`]/g, '')])); return null; }
+  if ((m = /^alter\s+table\s+(?:only\s+)?(\S+)\s+add\s+(?:constraint\s+\S+\s+)?foreign\s+key\s*\(([^)]*)\)\s*references\s+(\S+?)\s*\(([^)]*)\)/i.exec(s))) {
+    const fc = m[2].split(',').map(x => x.trim().replace(/["`]/g, '')), tc = m[4].split(',').map(x => x.trim().replace(/["`]/g, ''));
+    fc.forEach((c, i) => ctx.extra.fks.push({ from: [m[1], c], to: [m[3], tc[i] || tc[0]] })); return null;
+  }
+  if (/^alter\s+table/i.test(s)) { ctx.notes.add('some ALTER TABLE constraints (SQLite cannot add them afterwards)'); return null; }
+  if (/^create\s+(unique\s+)?index/i.test(s)) return s.replace(/\susing\s+\w+/i, '').replace(/\s+(with|where)\s*\([^)]*\)\s*$/i, '');
+  if (/^create\s+table/i.test(s)) {
+    s = s.replace(/\bONLY\s/i, '').replace(/::[a-z_ ]+(\([^)]*\))?(\[\])?/gi, '').replace(/\s+DEFAULT\s+nextval\([^)]*\)(?:::\w+)?/gi, '').replace(/\s+DEFAULT\s+(now|current_timestamp|localtimestamp)\s*\(\s*\)/gi, ' DEFAULT CURRENT_TIMESTAMP').replace(/\s+DEFAULT\s+\w+\([^)]*\)/gi, '')
+      .replace(/\)\s*(ENGINE|TYPE)\s*=[^;]*$/i, ')').replace(/\s+AUTO_INCREMENT(\s*=\s*\d+)?/gi, '').replace(/\s+UNSIGNED/gi, '')
+      .replace(/\s+(CHARACTER SET|CHARSET)\s+\w+/gi, '').replace(/\s+COLLATE\s+[\w.]+/gi, '').replace(/\s+COMMENT\s+'(?:[^']|'')*'/gi, '')
+      .replace(/\s+ON UPDATE CURRENT_TIMESTAMP(\(\))?/gi, '').replace(/\bUNIQUE KEY\s+\S+\s*\(/gi, 'UNIQUE (')
+      .replace(/,\s*\n?\s*(FULLTEXT\s+|SPATIAL\s+)?KEY\s+\S+\s*\([^)]*\)/gi, '').replace(/\b(tiny|small|medium|big)?int\(\d+\)/gi, 'INTEGER')
+      .replace(/\s+WITH(OUT)?\s+TIME ZONE/gi, '').replace(/\b(timestamp|time)\(\d\)/gi, '$1')
+      .replace(/\b(\w+)\s+(?:big)?serial\b/gi, '$1 INTEGER').replace(/\)\s*(INHERITS|PARTITION BY|WITH|TABLESPACE)\b[^;]*$/i, ')');
+    return s;
+  }
+  if (/^insert\s/i.test(s) && mysql) s = s.replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\\\/g, '\\');
+  if (/^insert\s/i.test(s)) s = s.replace(/^insert\s+into\s+(?:only\s+)?/i, 'INSERT INTO ');
+  return s;
+}
+async function importSQLText(db, text, ctx) {
+  const mysql = /ENGINE\s*=|mysqldump|phpMyAdmin|`\w+`/i.test(text.slice(0, 200000));
+  text = pgCopyToInserts(text.replace(/\r\n/g, '\n'));
+  if (mysql) text = text.replace(/\\\\/g, '\u0001').replace(/\\'/g, "''").replace(/\u0001/g, '\\\\');
+  const stmts = splitStatements(text);
+  db.exec('PRAGMA foreign_keys = OFF; BEGIN');
+  for (let i = 0; i < stmts.length; i++) {
+    const c = cleanStatement(stmts[i], mysql, ctx);
+    if (c === null) { ctx.skipped++; continue; }
+    try { db.exec(c); ctx.ok++; } catch (e) { ctx.failed++; if (ctx.errors.length < 4) ctx.errors.push(`${String(e.message || e)} – near: ${c.slice(0, 70).replace(/\s+/g, ' ')}…`); }
+    if (i % 300 === 299) await new Promise(r => setTimeout(r));
+  }
+  try { db.exec('COMMIT'); } catch (e) {}
+}
+function parseCSV(t) {
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { row.push(f); f = ''; }
+    else if (c === '\n') { row.push(f); rows.push(row); row = []; f = ''; }
+    else if (c !== '\r') f += c;
+  }
+  if (f.length || row.length) { row.push(f); rows.push(row); }
+  return rows.filter(r => r.length > 1 || r[0] !== '');
+}
+function importCSV(db, name, text, ctx) {
+  const rows = parseCSV(text.replace(/^\uFEFF/, '')); if (rows.length < 1) return;
+  const tn = name.replace(/^.*[\\/]/, '').replace(/\.csv$/i, '').replace(/[^\w]+/g, '_').replace(/^(\d)/, '_$1') || 'data';
+  const cols = rows[0].map((c, i) => (c.trim().replace(/[^\w]+/g, '_') || 'col' + (i + 1)));
+  const body = rows.slice(1), num = cols.map((_, i) => body.length && body.every(r => r[i] === undefined || r[i] === '' || (r[i].trim() !== '' && !isNaN(+r[i]))));
+  db.exec(`CREATE TABLE "${tn}" (${cols.map((c, i) => `"${c}" ${num[i] ? 'REAL' : 'TEXT'}`).join(', ')})`);
+  const st = db.prepare(`INSERT INTO "${tn}" VALUES (${cols.map(() => '?').join(',')})`);
+  db.exec('BEGIN'); body.forEach(r => st.run(cols.map((_, i) => r[i] === undefined || r[i] === '' ? null : num[i] ? +r[i] : r[i]))); db.exec('COMMIT'); st.free();
+  ctx.ok += body.length; ctx.tables.push(`${tn} (CSV, ${body.length} rows)`);
+}
+async function gunzip(buf) {
+  const s = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(s).arrayBuffer());
+}
+function readTar(u8) {
+  const out = [], dec = new TextDecoder(); let off = 0;
+  const str = (a, b) => dec.decode(u8.subarray(off + a, off + b)).replace(/\0.*$/s, '');
+  while (off + 512 <= u8.length) {
+    const name = str(0, 100); if (!name) break;
+    const size = parseInt(str(124, 136).trim() || '0', 8), type = str(156, 157), prefix = str(345, 500);
+    if (type === '0' || type === '' ) out.push({ name: (prefix ? prefix + '/' : '') + name, data: u8.subarray(off + 512, off + 512 + size) });
+    off += 512 + Math.ceil(size / 512) * 512;
+  }
+  return out;
+}
+async function readZip(u8) {
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength), dec = new TextDecoder(); let e = u8.length - 22;
+  while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('Not a valid zip file.');
+  const n = dv.getUint16(e + 10, true); let p = dv.getUint32(e + 16, true); const out = [];
+  for (let i = 0; i < n; i++) {
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), el = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), lo = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nl)); p += 46 + nl + el + cl;
+    if (name.endsWith('/')) continue;
+    const ds = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true), raw = u8.subarray(ds, ds + csize);
+    let data = raw;
+    if (method === 8) data = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+    else if (method !== 0) continue;
+    out.push({ name, data });
+  }
+  return out;
+}
+async function importFile(file) {
+  const m = $('fileMsg'); m.className = 'msg'; m.textContent = `Reading ${file.name}…`;
+  if (file.size > 60 * 1024 * 1024) { m.className = 'msg err'; m.textContent = 'File is larger than 60 MB – please upload a smaller dump.'; return; }
+  try {
+    const SQL = await loadSQLJS(); let u8 = new Uint8Array(await file.arrayBuffer()), files = [];
+    const isGz = u8[0] === 0x1f && u8[1] === 0x8b;
+    if (isGz) u8 = await gunzip(u8);
+    const looksTar = u8.length > 512 && new TextDecoder().decode(u8.subarray(257, 262)) === 'ustar';
+    const looksZip = u8[0] === 0x50 && u8[1] === 0x4b;
+    const looksSqlite = new TextDecoder().decode(u8.subarray(0, 15)) === 'SQLite format 3';
+    let db;
+    const ctx = { ok: 0, skipped: 0, failed: 0, errors: [], notes: new Set(), tables: [], extra: { fks: [], pks: [] } };
+    if (looksSqlite) { db = new SQL.Database(u8); }
+    else {
+      if (looksTar) files = readTar(u8); else if (looksZip) files = await readZip(u8);
+      else files = [{ name: file.name.replace(/\.gz$/i, ''), data: u8 }];
+      if (files.some(f => /(^|\/)toc\.dat$/.test(f.name))) throw new Error('This is a PostgreSQL tar/custom-format backup (binary). Please export plain SQL instead:  pg_dump --no-owner --inserts mydb > dump.sql');
+      const dec = new TextDecoder(), usable = files.filter(f => /\.(sql|txt|csv|sqlite3?|db)$/i.test(f.name) && !/(^|\/)(\.|__MACOSX)/.test(f.name)).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      if (!usable.length) throw new Error('No .sql, .csv or SQLite files found inside.' + (files.length ? ' Found: ' + files.slice(0, 5).map(f => f.name).join(', ') : ''));
+      db = new SQL.Database();
+      for (const f of usable) {
+        if (/\.(sqlite3?|db)$/i.test(f.name)) { if (usable.length === 1) { db.close(); db = new SQL.Database(f.data); } continue; }
+        const text = dec.decode(f.data);
+        if (/\.csv$/i.test(f.name)) importCSV(db, f.name, text, ctx); else await importSQLText(db, text, ctx);
+      }
+    }
+    if (S.db) S.db.close();
+    S.db = db; S.kind = 'sandbox'; S.dbType = 'sqlite'; S.token = null; S.extra = ctx.extra; S.schema = sandboxSchema();
+    store.set('sqlLab.sample', ''); store.set('sqlLab.ddl', '');
+    if (!S.schema.tables.length) throw new Error('Nothing could be loaded – no tables were created. ' + (ctx.errors[0] || ''));
+    let t = `✓ Loaded ${S.schema.tables.length} table(s) from ${file.name}.`;
+    if (ctx.failed || ctx.skipped) t += ` ${ctx.ok} statement(s) ran, ${ctx.skipped} server-only ones skipped${ctx.failed ? `, ${ctx.failed} failed` : ''}.`;
+    m.className = 'msg ok'; m.textContent = t;
+    log('info', 'File imported: ' + file.name, [t, ...[...ctx.notes].map(n => 'Skipped: ' + n), ...ctx.errors.map(e => 'Failed: ' + e)].join('\n'));
+    fillExamples(); setConn(); renderSchema(); refreshHighlights(); setStatus('Sandbox ready', 'ok'); schedule(0);
+    if (!ctx.failed) setTimeout(() => dlg.close(), 900);
+    if (S.schema.tables[0] && /^\s*SELECT \* FROM customers;?\s*$/.test($('sql').value) && !S.schema.tables.some(x => x.name === 'customers')) { $('sql').value = `SELECT * FROM ${q(S.schema.tables[0].name)} LIMIT 20;`; onEdit(); }
+  } catch (e) { m.className = 'msg err'; m.textContent = String(e.message || e); }
+}
+const fdrop = $('fdrop');
+fdrop.onclick = () => $('dbFile').click();
+fdrop.ondragover = e => { e.preventDefault(); fdrop.classList.add('drag'); };
+fdrop.ondragleave = () => fdrop.classList.remove('drag');
+fdrop.ondrop = e => { e.preventDefault(); fdrop.classList.remove('drag'); if (e.dataTransfer.files[0]) importFile(e.dataTransfer.files[0]); };
+$('dbFile').onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; };
 
 /* ================= results ================= */
 function gridHTML(set) {
@@ -1063,55 +1237,160 @@ if (new URLSearchParams(location.search).has('embed')) document.body.classList.a
 })();
 </script>
 <script>
-/* draggable splitters between the boxes (desktop / tablet) */
-(function initSplitters(cfg) {
-  const main = document.querySelector('main'), q = s => document.querySelector(s), R = s => q(s).getBoundingClientRect();
-  const mq = matchMedia('(max-width:900px)');
-  let cols = cfg.defaults.cols.slice(), rows = cfg.defaults.rows.slice();
-  try { const s = JSON.parse(localStorage.getItem(cfg.key)); if (s && s.cols && s.rows) { cols = s.cols; rows = s.rows; } } catch (e) {}
-  const mk = () => { const d = document.createElement('div'); d.title = 'Drag to resize - double-click to reset'; main.appendChild(d); return d; };
-  const colH = mk(); colH.className = 'split col';
-  const rowH = cfg.rowLines.map(() => { const d = mk(); d.className = 'split row'; return d; });
-  function save() { try { localStorage.setItem(cfg.key, JSON.stringify({ cols, rows })); } catch (e) {} }
-  function place() {
-    if (mq.matches) return;
-    const m = main.getBoundingClientRect(), gap = parseFloat(getComputedStyle(main).columnGap) || 12;
-    const top = R(cfg.rows[0]).top - m.top, bottom = R(cfg.rows[cfg.rows.length - 1]).bottom - m.top;
-    colH.style.cssText = `display:block;left:${R(cfg.cols[0]).right - m.left + gap / 2 - 8}px;top:${top}px;height:${bottom - top}px`;
-    rowH.forEach((h, i) => {
-      const L = cfg.rowLines[i], rs = L.span.map(R);
-      const left = Math.min(...rs.map(x => x.left)), right = Math.max(...rs.map(x => x.right));
-      h.style.cssText = `display:block;top:${R(L.above).bottom - m.top + gap / 2 - 8}px;left:${left - m.left}px;width:${right - left}px`;
-    });
+/* ===== docking layout manager: drag a title bar to dock, drag gutters to resize, minimise / maximise, presets ===== */
+(function initDock(cfg) {
+  const main = document.querySelector('main'), mq = matchMedia('(max-width:900px)');
+  const panels = {}; cfg.panels.forEach(id => { panels[id] = document.getElementById(id); });
+  const elOf = new WeakMap();
+  const B = s => typeof s === 'string' ? { t: 'p', id: s } : { t: 's', dir: s.d, kids: s.k.map(([w, x]) => Object.assign(B(x), { w })) };
+  const fresh = name => ({ preset: name, tree: B(cfg.presets[name]), hidden: [], solo: null });
+  const ids = (n, o = []) => { if (n.t === 'p') o.push(n.id); else n.kids.forEach(k => ids(k, o)); return o; };
+  const valid = t => { const a = ids(t).sort().join(), b = cfg.panels.slice().sort().join(); return a === b; };
+  let st = null;
+  try { const s = JSON.parse(localStorage.getItem(cfg.key)); if (s && s.tree && valid(s.tree)) st = s; } catch (e) {}
+  if (!st) st = fresh(cfg.def);
+  st.hidden = st.hidden || []; st.solo = st.solo || null;
+  const save = () => { try { localStorage.setItem(cfg.key, JSON.stringify(st)); } catch (e) {} };
+  const vis = n => n.t === 'p' ? (st.solo ? n.id === st.solo : !st.hidden.includes(n.id)) : n.kids.some(vis);
+
+  const hold = document.createElement('div'); hold.id = 'dkhold'; main.appendChild(hold);
+  const tray = document.createElement('div'); tray.id = 'dktray'; main.appendChild(tray);
+  let root = null;
+  const label = id => { const c = panels[id].querySelector('h2').cloneNode(true); c.querySelectorAll('.num,.right,.wc').forEach(x => x.remove()); return c.textContent.trim(); };
+
+  function build(n) {
+    if (n.t === 'p') { const el = panels[n.id]; el.style.flex = `${n.w || 1} 1 0`; elOf.set(n, el); return el; }
+    const el = document.createElement('div'); el.className = 'dk-split ' + n.dir; el.style.flex = `${n.w || 1} 1 0`; elOf.set(n, el);
+    const kids = n.kids.filter(vis);
+    kids.forEach((k, i) => { if (i) el.appendChild(gutter(n, kids[i - 1], k)); el.appendChild(build(k)); });
+    return el;
   }
-  function apply() {
-    if (mq.matches) { main.style.gridTemplateColumns = main.style.gridTemplateRows = ''; return; }
-    main.style.gridTemplateColumns = cols.map(c => `minmax(0,${c}fr)`).join(' ');
-    main.style.gridTemplateRows = rows.map(r => `minmax(0,${r}fr)`).join(' ');
-    place();
+  function render() {
+    if (mq.matches) {
+      main.classList.remove('dk'); if (root) { root.remove(); root = null; }
+      cfg.panels.forEach(id => { panels[id].style.flex = ''; main.insertBefore(panels[id], hold); });
+      return;
+    }
+    main.classList.add('dk');
+    cfg.panels.forEach(id => hold.appendChild(panels[id]));
+    const r = build(st.tree); r.style.flex = '1 1 0'; r.style.minHeight = '0';
+    if (root) root.remove(); root = r; main.insertBefore(r, tray);
+    tray.innerHTML = '';
+    st.hidden.filter(id => !st.solo).forEach(id => { const b = document.createElement('button'); b.textContent = '▢ ' + label(id); b.title = 'Restore this box'; b.onclick = () => { st.hidden = st.hidden.filter(x => x !== id); save(); render(); }; tray.appendChild(b); });
+    if (st.solo) { const b = document.createElement('button'); b.className = 'primary'; b.textContent = '⤡ Back to layout'; b.onclick = () => { st.solo = null; save(); render(); }; tray.appendChild(b); }
+    tray.classList.toggle('on', tray.children.length > 0);
+    cfg.panels.forEach(id => { const m = panels[id].querySelector('[data-a=max]'); if (m) m.textContent = st.solo === id ? '⤡' : '⛶'; });
+    sel.title = 'Layout: ' + (st.preset || 'custom');
   }
-  function wire(h, kind, i) {
-    h.addEventListener('pointerdown', e => {
-      e.preventDefault(); h.setPointerCapture(e.pointerId); h.classList.add('on'); document.body.classList.add('dragging');
-      const sizes = kind === 'col' ? cfg.cols.map(s => R(s).width) : cfg.rows.map(s => R(s).height);
-      const start = kind === 'col' ? e.clientX : e.clientY, a = sizes[i], b = sizes[i + 1], min = 90;
+
+  function gutter(node, a, b) {
+    const g = document.createElement('div'); g.className = 'dk-gut ' + node.dir; g.title = 'Drag to resize · double-click to reset the layout';
+    g.addEventListener('pointerdown', e => {
+      e.preventDefault(); g.setPointerCapture(e.pointerId); g.classList.add('on'); document.body.classList.add('dragging');
+      const horiz = node.dir === 'h', A = elOf.get(a), Bn = elOf.get(b), size = x => horiz ? x.getBoundingClientRect().width : x.getBoundingClientRect().height;
+      const sa = size(A), sb = size(Bn), ws = (a.w || 1) + (b.w || 1), start = horiz ? e.clientX : e.clientY, min = 80;
       const move = ev => {
-        let d = (kind === 'col' ? ev.clientX : ev.clientY) - start;
-        d = Math.max(min - a, Math.min(b - min, d));
-        const s = sizes.slice(); s[i] = a + d; s[i + 1] = b - d;
-        if (kind === 'col') cols = s; else rows = s;
-        apply();
+        let d = (horiz ? ev.clientX : ev.clientY) - start; d = Math.max(min - sa, Math.min(sb - min, d));
+        a.w = ws * (sa + d) / (sa + sb); b.w = ws - a.w; A.style.flex = `${a.w} 1 0`; Bn.style.flex = `${b.w} 1 0`;
       };
-      const up = () => { h.classList.remove('on'); document.body.classList.remove('dragging'); h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); save(); };
-      h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+      const up = () => { g.classList.remove('on'); document.body.classList.remove('dragging'); g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up); st.preset = st.preset || 'custom'; save(); };
+      g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
     });
-    h.addEventListener('dblclick', () => { cols = cfg.defaults.cols.slice(); rows = cfg.defaults.rows.slice(); apply(); save(); });
+    g.addEventListener('dblclick', () => { const h = st.hidden; st = fresh(cfg.presets[st.preset] ? st.preset : cfg.def); st.hidden = h; save(); render(); });
+    return g;
   }
-  wire(colH, 'col', 0); rowH.forEach((h, i) => wire(h, 'row', i));
-  new ResizeObserver(place).observe(main);
-  mq.addEventListener('change', apply);
-  apply(); setTimeout(place, 300);
-})({ key: 'sqlLab.split', cols: ['#p-code', '#p-steps'], rows: ['#p-code', '#p-result', '#p-output'], rowLines: [{ above: '#p-code', span: ['#p-code', '#p-steps'] }, { above: '#p-result', span: ['#p-result'] }], defaults: { cols: [1.2, 1], rows: [0.8, 1.1, 0.55] } });
+
+  /* ---- tree surgery ---- */
+  const find = (n, id, parent = null) => { if (n.t === 'p') return n.id === id ? { n, parent } : null; for (const k of n.kids) { const r = find(k, id, n); if (r) return r; } return null; };
+  const parentOf = (n, t = st.tree) => { if (t.t === 'p') return null; if (t.kids.includes(n)) return t; for (const k of t.kids) { const r = parentOf(n, k); if (r) return r; } return null; };
+  function detach(id) {
+    const { n, parent } = find(st.tree, id); parent.kids.splice(parent.kids.indexOf(n), 1);
+    if (parent.kids.length === 1) { const only = parent.kids[0], gp = parentOf(parent); only.w = parent.w; if (!gp) st.tree = only; else gp.kids[gp.kids.indexOf(parent)] = only; }
+    return n;
+  }
+  function dock(src, tgt, zone) {
+    if (zone === 'center') { const a = find(st.tree, src).n, b = find(st.tree, tgt).n; [a.id, b.id] = [b.id, a.id]; }
+    else {
+      const n = detach(src), { n: t, parent } = find(st.tree, tgt), dir = zone === 'left' || zone === 'right' ? 'h' : 'v', first = zone === 'left' || zone === 'top', tw = t.w || 1;
+      if (parent && parent.dir === dir) { t.w = tw / 2; n.w = tw / 2; parent.kids.splice(parent.kids.indexOf(t) + (first ? 0 : 1), 0, n); }
+      else { const s = { t: 's', dir, w: tw, kids: first ? [n, t] : [t, n] }; n.w = 1; t.w = 1; if (!parent) st.tree = s; else parent.kids[parent.kids.indexOf(t)] = s; }
+    }
+    st.preset = 'custom'; save(); render();
+  }
+
+  /* ---- drag a title bar to dock ---- */
+  const zoneEl = document.createElement('div'); zoneEl.className = 'dk-zone'; document.body.appendChild(zoneEl);
+  function targetAt(x, y, self) {
+    for (const el of document.elementsFromPoint(x, y)) {
+      const p = el.closest && el.closest('.panel'); if (!p || p.id === self || !panels[p.id]) continue;
+      const r = p.getBoundingClientRect(), fx = (x - r.left) / r.width, fy = (y - r.top) / r.height;
+      let zone = 'center';
+      if (!(fx > .28 && fx < .72 && fy > .28 && fy < .72)) { const d = { left: fx, right: 1 - fx, top: fy, bottom: 1 - fy }; zone = Object.keys(d).sort((a, b) => d[a] - d[b])[0]; }
+      return { id: p.id, zone, r };
+    }
+    return null;
+  }
+  function showZone(t) {
+    if (!t) { zoneEl.style.display = 'none'; return; }
+    const { r, zone } = t; let L = r.left, T = r.top, W = r.width, H = r.height;
+    if (zone === 'left') W /= 2; else if (zone === 'right') { L += W / 2; W /= 2; } else if (zone === 'top') H /= 2; else if (zone === 'bottom') { T += H / 2; H /= 2; }
+    Object.assign(zoneEl.style, { display: 'block', left: L + 'px', top: T + 'px', width: W + 'px', height: H + 'px' });
+  }
+  document.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || mq.matches) return;
+    const h2 = e.target.closest('.panel > h2'); if (!h2 || e.target.closest('button,input,select,label,a,textarea')) return;
+    const pid = h2.parentElement.id; if (!panels[pid] || st.solo) return;
+    const sx = e.clientX, sy = e.clientY; let active = false, ghost = null, over = null;
+    const mv = ev => {
+      if (!active) { if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return; active = true; document.body.classList.add('dragging'); ghost = document.createElement('div'); ghost.className = 'dk-ghost'; ghost.textContent = '⠿ ' + label(pid); document.body.appendChild(ghost); }
+      ghost.style.left = ev.clientX + 12 + 'px'; ghost.style.top = ev.clientY + 12 + 'px';
+      over = targetAt(ev.clientX, ev.clientY, pid); showZone(over);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+      if (!active) return; document.body.classList.remove('dragging'); ghost.remove(); showZone(null);
+      if (over) dock(pid, over.id, over.zone);
+    };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+  });
+
+  /* ---- minimise / maximise buttons ---- */
+  cfg.panels.forEach(id => {
+    const h2 = panels[id].querySelector('h2'), wc = document.createElement('span'); wc.className = 'wc';
+    wc.innerHTML = '<button class="wb" data-a="min" title="Minimise (restore from the bar below)">▁</button><button class="wb" data-a="max" title="Maximise / restore">⛶</button>';
+    h2.appendChild(wc);
+    wc.addEventListener('click', e => {
+      const a = e.target.closest('button'); if (!a) return;
+      if (a.dataset.a === 'min') { if (cfg.panels.filter(x => !st.hidden.includes(x)).length <= 1) return; st.hidden.push(id); }
+      else st.solo = st.solo === id ? null : id;
+      save(); render();
+    });
+    h2.addEventListener('dblclick', e => { if (!e.target.closest('button,input,select,label')) { st.solo = st.solo === id ? null : id; save(); render(); } });
+  });
+
+  /* ---- layout menu ---- */
+  const sel = document.createElement('select'); sel.id = 'layoutSel'; sel.setAttribute('aria-label', 'Layout');
+  sel.innerHTML = '<option value="">▦ Layout</option>' + Object.keys(cfg.presets).map(k => `<option value="p:${k}">${k}</option>`).join('') + '<option value="restore">▢ Restore all boxes</option><option value="reset">⟲ Reset layout</option>';
+  sel.onchange = () => {
+    const v = sel.value; sel.value = '';
+    if (v.startsWith('p:')) st = fresh(v.slice(2));
+    else if (v === 'restore') { st.hidden = []; st.solo = null; }
+    else if (v === 'reset') st = fresh(cfg.def);
+    else return;
+    save(); render();
+  };
+  const sp = document.querySelector('header .spacer'); if (sp) sp.after(sel);
+  mq.addEventListener('change', render);
+  render();
+})({ key: 'sqlLab.dock2', def: 'Classic', panels: ['p-code', 'p-steps', 'p-result', 'p-output', 'p-visual'],
+  presets: {
+    'Classic': { d: 'h', k: [[1.2, { d: 'v', k: [[.8, 'p-code'], [1.1, 'p-result'], [.55, 'p-output']] }], [1, { d: 'v', k: [[1, 'p-steps'], [1.65, 'p-visual']] }]] },
+    'Code focus': { d: 'h', k: [[2, { d: 'v', k: [[1.3, 'p-code'], [1, 'p-result']] }], [1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual'], [.6, 'p-output']] }]] },
+    'Stacked': { d: 'v', k: [[.9, 'p-code'], [1.2, { d: 'h', k: [[1, 'p-result'], [1, 'p-steps']] }], [1.1, { d: 'h', k: [[1.4, 'p-visual'], [1, 'p-output']] }]] },
+    'Three columns': { d: 'h', k: [[1, { d: 'v', k: [[1, 'p-code'], [1, 'p-output']] }], [1.2, { d: 'v', k: [[1, 'p-result'], [1, 'p-steps']] }], [1, 'p-visual']] },
+    'Results wide': { d: 'v', k: [[.7, 'p-code'], [1.5, { d: 'h', k: [[1.6, 'p-result'], [1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual']] }]] }], [.45, 'p-output']] },
+    'Schema focus': { d: 'h', k: [[1, { d: 'v', k: [[1, 'p-code'], [1, 'p-result'], [.5, 'p-output']] }], [1.4, { d: 'v', k: [[1.6, 'p-visual'], [1, 'p-steps']] }]] }
+  } });
 </script>
 </body>
 </html>
