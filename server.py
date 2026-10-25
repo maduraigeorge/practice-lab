@@ -9,7 +9,12 @@ index.html.
     python server.py            (then open http://127.0.0.1:8765)
 """
 import argparse
+import base64
+import glob
 import hmac
+import shutil
+import subprocess
+import tempfile
 import json
 import os
 import secrets
@@ -335,8 +340,45 @@ def api_describe(p):
     return ask_claude(p, [{'type': 'text', 'text': DESCRIBE_PROMPT.replace('{text}', text)}])
 
 
+def find_pg_restore():
+    env = os.environ.get('PG_RESTORE')
+    if env and os.path.exists(env):
+        return env
+    w = shutil.which('pg_restore')
+    if w:
+        return w
+    pats = [r'C:\Program Files\PostgreSQL\*\bin\pg_restore.exe', r'C:\Program Files (x86)\PostgreSQL\*\bin\pg_restore.exe',
+            '/usr/lib/postgresql/*/bin/pg_restore', '/opt/homebrew/opt/postgresql*/bin/pg_restore',
+            '/usr/local/opt/postgresql*/bin/pg_restore', '/Applications/Postgres.app/Contents/Versions/*/bin/pg_restore']
+    found = sorted(sum((glob.glob(x) for x in pats), []), key=lambda s: [int(n) for n in __import__('re').findall(r'\d+', s)] or [0])
+    return found[-1] if found else None
+
+
+def api_pgrestore(p):
+    exe = find_pg_restore()
+    if not exe:
+        raise ApiError('pg_restore was not found on this computer. Install PostgreSQL (or add its bin folder to PATH), '
+                       'or run  pg_restore -f dump.sql --no-owner yourfile  yourself and upload dump.sql.')
+    raw = base64.b64decode(p.get('data') or '')
+    fd, path = tempfile.mkstemp(suffix='.dump')
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(raw)
+        r = subprocess.run([exe, '-f', '-', '--no-owner', '--no-privileges', path], capture_output=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        raise ApiError('pg_restore took too long.')
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    if r.returncode != 0 and not r.stdout:
+        raise ApiError('pg_restore could not read this file: ' + r.stderr.decode('utf-8', 'replace')[:300])
+    return {'text': r.stdout.decode('utf-8', 'replace')}
+
+
 ROUTES = {'connect': api_connect, 'query': api_query, 'schema': api_schema,
-          'disconnect': api_disconnect, 'vision': api_vision, 'describe': api_describe}
+          'disconnect': api_disconnect, 'vision': api_vision, 'describe': api_describe, 'pgrestore': api_pgrestore}
 
 
 # ---------------------------------------------------------------- http

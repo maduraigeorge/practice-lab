@@ -303,8 +303,19 @@ body.dragging * { cursor: grabbing !important; }
     <div class="dtabs"><button data-d="live" class="on">🔌 Live DB</button><button data-d="schema">✏️ Create schema</button><button data-d="file">📁 Upload file</button><button data-d="image">🖼️ From image</button><button data-d="sample">📚 Sample</button></div>
 
     <div class="dbody" id="d-live">
+      <div id="noBridge" style="display:none">
+        <h3 style="margin-top:0">Use your own PostgreSQL / MySQL / phpMyAdmin data</h3>
+        <p>A web page can't open a connection to a database server by itself. Instead, <b>export your database and load it here</b> – it runs in your browser, your data never leaves your computer.</p>
+        <ol style="line-height:1.7;padding-left:20px;margin:6px 0">
+          <li><b>phpMyAdmin</b> → select the database → <b>Export</b> → Quick, format <b>SQL</b> → Go.</li>
+          <li><b>pgAdmin</b> → right-click the database → <b>Backup…</b> (any format), or in a terminal: <code class="i">pg_dump --no-owner mydb &gt; dump.sql</code></li>
+          <li>Click <b>Upload file</b> below and pick the file (<code class="i">.sql</code>, <code class="i">.tar</code>, <code class="i">.dump</code>, <code class="i">.zip</code>, <code class="i">.gz</code> all work).</li>
+        </ol>
+        <div class="row"><button class="primary" id="goUpload">📁 Upload a backup file</button></div>
+        <p class="note">Want real live connections? Download the project and run <code class="i">start.bat</code> – the connection form then appears here.</p>
+      </div>
       <div class="warnbox" id="bridgeWarn" style="display:none"></div>
-      <div class="fld">
+      <div class="fld" id="liveForm">
         <div class="seg">
           <label><input type="radio" name="dbt" value="postgres" checked> PostgreSQL</label>
           <label><input type="radio" name="dbt" value="mysql"> MySQL / MariaDB <span style="color:var(--muted)">(phpMyAdmin)</span></label>
@@ -318,7 +329,7 @@ body.dragging * { cursor: grabbing !important; }
         <label>Password<input type="password" id="f-pass" autocomplete="current-password"></label>
         <label style="justify-content:flex-end"><span class="chk"><input type="checkbox" id="f-ssl"> Use SSL</span></label>
       </div>
-      <p class="note" style="margin-bottom:0">phpMyAdmin is just a web page for MySQL – connect to the MySQL/MariaDB server behind it (usually host <code class="i">localhost</code>, port <code class="i">3306</code>, the same user and password you use in phpMyAdmin).
+      <p class="note" id="liveNote" style="margin-bottom:0">phpMyAdmin is just a web page for MySQL – connect to the MySQL/MariaDB server behind it (usually host <code class="i">localhost</code>, port <code class="i">3306</code>, the same user and password you use in phpMyAdmin).
         Your password is sent only to the bridge on this computer, held in memory, and never saved. Tip: use a <b>read-only database user</b> for real data.</p>
       <div class="msg" id="liveMsg"></div>
     </div>
@@ -353,7 +364,7 @@ body.dragging * { cursor: grabbing !important; }
     </div>
 
     <div class="dbody" id="d-common" style="display:none;padding-top:0">
-      <div class="row" style="margin-top:0"><input type="password" id="apiKey" placeholder="Anthropic API key (only for image / description; not needed if the server has ANTHROPIC_API_KEY)" style="flex:1;min-width:200px" autocomplete="off"></div>
+      <div class="row" style="margin-top:0"><input type="password" id="apiKey" placeholder="Your Anthropic API key (needed for image / description; stays in this browser tab)" style="flex:1;min-width:200px" autocomplete="off"></div>
       <div class="msg" id="sandMsg"></div>
     </div>
 
@@ -656,7 +667,7 @@ function showTab(t) {
   document.querySelectorAll('.dtabs button').forEach(b => b.classList.toggle('on', b.dataset.d === t));
   DTABS.forEach(k => $('d-' + k).style.display = k === t ? '' : 'none');
   $('d-common').style.display = t === 'schema' || t === 'image' ? '' : 'none';
-  $('dConnect').style.display = t === 'live' ? '' : 'none';
+  $('dConnect').style.display = t === 'live' && HAS_BRIDGE ? '' : 'none';
 }
 document.querySelectorAll('#dbbar [data-open]').forEach(b => b.onclick = () => openDlg(b.dataset.open));
 $('conn').onclick = () => openDlg();
@@ -680,7 +691,13 @@ $('f-url').oninput = () => {
 };
 async function checkBridge() {
   const w = $('bridgeWarn');
-  if (!HAS_BRIDGE) { w.style.display = ''; w.innerHTML = '<b>Live connections and image/AI schema tools are not available on this hosted page</b> (a web page cannot open a database connection). To use them, download the project and run <code class="i">start.bat</code> (or <code class="i">python server.py</code>), then open <b>http://127.0.0.1:8765</b>. <b>Create schema</b> (typed SQL), <b>Sample DB</b> and the whole Python lab work right here.'; return; }
+  if (!HAS_BRIDGE) {
+    $('noBridge').style.display = ''; $('liveForm').style.display = 'none'; $('liveNote').style.display = 'none'; $('liveMsg').style.display = 'none';
+    document.querySelector('.dtabs [data-d=live]').textContent = '📤 My server';
+    document.querySelector('#dbbar [data-open=live]').textContent = '📤 Use my server data';
+    $('goUpload').onclick = () => showTab('file');
+    return;
+  }
   try {
     const p = await (await fetch('/api/ping')).json();
     const miss = [!p.postgres && 'PostgreSQL: pip install "psycopg[binary]"', !p.mysql && 'MySQL: pip install pymysql'].filter(Boolean);
@@ -756,11 +773,36 @@ async function useAIText(text) {
     fillExamples(); setConn(); setStatus('Sandbox ready', 'ok'); log('info', 'Schema created', ddl); schedule(0);
   } catch (e) { m.className = 'msg err'; m.textContent = 'Could not use the result: ' + e.message + ' – the raw reply is in the Create schema box; fix it and press Create tables.'; if (text) $('ddl').value = text; }
 }
+const SCHEMA_SPEC = `Reply with ONLY one JSON object, no markdown fences, with these keys:
+  "tables": [{"name": str, "columns": [{"name": str, "type": str, "pk": bool, "nullable": bool}]}],
+  "fks": [{"from_table": str, "from_column": str, "to_table": str, "to_column": str}],
+  "ddl": a string of SQLite-compatible CREATE TABLE statements (PRIMARY KEY and FOREIGN KEY clauses included, parent tables first),
+  "sample_data": a string of SQLite-compatible INSERT statements with 6-10 realistic rows per table, consistent with the foreign keys.`;
+const VISION_PROMPT = 'This image shows a database schema (an ER diagram, a table list or a screenshot of table structures).\nExtract it faithfully - do not invent tables or columns that are not visible. If a column type is unreadable, guess a sensible one.\n' + SCHEMA_SPEC;
+const DESCRIBE_PROMPT = t => `Design a small, sensible relational database (3-6 tables, proper primary and foreign keys) for this request:\n${t}\n` + SCHEMA_SPEC;
+async function claudeDirect(key, content) {
+  let r;
+  try {
+    r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 8000, messages: [{ role: 'user', content }] }) });
+  } catch (e) { return { ok: false, error: { message: 'Could not reach the Anthropic API (check your internet connection).' } }; }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) return { ok: false, error: { message: 'Anthropic API error: ' + ((j.error && j.error.message) || r.status) } };
+  return { ok: true, text: (j.content || []).map(b => b.text || '').join('') };
+}
 async function askAI(path, body, btn, wait) {
   const m = $('sandMsg'); m.className = 'msg';
-  if (!HAS_BRIDGE) { m.className = 'msg err'; m.textContent = 'This needs the bridge server – start the app with start.bat.'; return; }
+  const key = $('apiKey').value.trim();
+  if (!key && !HAS_BRIDGE) { m.className = 'msg err'; m.textContent = 'Paste your Anthropic API key above first (console.anthropic.com). It is used only from your browser to call Claude.'; return; }
   m.textContent = wait; btn.disabled = true;
-  const r = await api(path, { key: $('apiKey').value, ...body });
+  let r;
+  if (key) {
+    try { sessionStorage.setItem('sqlLab.key', key); } catch (e) {}
+    r = path === 'vision'
+      ? await claudeDirect(key, [{ type: 'image', source: { type: 'base64', media_type: body.media_type || 'image/png', data: body.image } }, { type: 'text', text: VISION_PROMPT }])
+      : await claudeDirect(key, [{ type: 'text', text: DESCRIBE_PROMPT(body.text) }]);
+  } else r = await api(path, body);
   btn.disabled = false;
   if (!r.ok) { m.className = 'msg err'; m.textContent = r.error.message; return; }
   useAIText(r.text);
@@ -808,7 +850,7 @@ function cleanStatement(st, mysql, ctx) {
 }
 async function importSQLText(db, text, ctx) {
   const mysql = /ENGINE\s*=|mysqldump|phpMyAdmin|`\w+`/i.test(text.slice(0, 200000));
-  text = pgCopyToInserts(text.replace(/\r\n/g, '\n'));
+  text = pgCopyToInserts(text.replace(/\r\n/g, '\n')).replace(/^\\(?!\.).*$/gm, '');
   if (mysql) text = text.replace(/\\\\/g, '\u0001').replace(/\\'/g, "''").replace(/\u0001/g, '\\\\');
   const stmts = splitStatements(text);
   db.exec('PRAGMA foreign_keys = OFF; BEGIN');
@@ -875,6 +917,68 @@ async function readZip(u8) {
   }
   return out;
 }
+
+/* ===== PostgreSQL pg_dump archive reader (custom -Fc and tar -Ft formats), fully in the browser ===== */
+async function inflateZlib(u8) {
+  return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
+}
+function pgReadToc(u8) {
+  const dec = new TextDecoder(); let p = 0, isz = 4, osz = 8;
+  const byte = () => u8[p++];
+  const int = () => { const neg = byte(); let v = 0; for (let i = 0; i < isz; i++) v += byte() * 2 ** (8 * i); return neg ? -v : v; };
+  const off = () => { const flag = byte(); let v = 0; for (let i = 0; i < osz; i++) v += byte() * 2 ** (8 * i); return { flag, pos: v }; };
+  const str = () => { const n = int(); if (n < 0) return null; const s = dec.decode(u8.subarray(p, p + n)); p += n; return s; };
+  if (dec.decode(u8.subarray(0, 5)) !== 'PGDMP') throw new Error('Not a PostgreSQL archive.');
+  p = 5; const vmaj = byte(), vmin = byte(), vrev = byte(), ver = vmaj * 10000 + vmin * 100 + vrev;
+  isz = byte(); osz = byte(); const format = byte();
+  let algo = 0;
+  if (ver >= 11500) algo = byte(); else { const lvl = int(); algo = lvl === 0 ? 0 : 1; }
+  if (ver >= 10400) { for (let i = 0; i < 7; i++) int(); str(); }
+  if (ver >= 11000) { str(); str(); }
+  const n = int(), toc = [];
+  for (let i = 0; i < n; i++) {
+    const e = { id: int() }; int();
+    if (ver >= 10800) { str(); str(); } else { str(); }
+    e.tag = str(); e.desc = str(); if (ver >= 11100) int();
+    e.defn = str(); str(); e.copy = str();
+    if (ver >= 10300) e.ns = str();
+    if (ver >= 11000) str();
+    if (ver >= 11400) str();
+    if (ver >= 11600) int();
+    str(); if (ver >= 10900) str();
+    if (ver >= 10500) { while (str() !== null) { /* dependencies */ } }
+    if (format === 1) e.off = off(); else e.file = str();
+    toc.push(e);
+  }
+  return { toc, algo, format, ver, endPos: p };
+}
+async function pgCustomToSQL(u8) {
+  const { toc, algo } = pgReadToc(u8);
+  if (algo > 1) throw new Error('This backup uses lz4/zstd compression, which the browser cannot unpack. Re-export with:  pg_dump -Fc --compress=gzip  (or plain SQL).');
+  const dec = new TextDecoder(); let out = '';
+  for (const e of toc) {
+    if (e.desc === 'TABLE DATA' && e.copy && e.off && e.off.flag === 2) {
+      let p = e.off.pos; p++; /* block type */
+      const isz = 4, rdInt = () => { const neg = u8[p++]; let v = 0; for (let i = 0; i < isz; i++) v += u8[p++] * 2 ** (8 * i); return neg ? -v : v; };
+      rdInt(); const chunks = []; let total = 0;
+      for (;;) { const len = rdInt(); if (len <= 0) break; chunks.push(u8.subarray(p, p + len)); p += len; total += len; }
+      let raw = new Uint8Array(total), o = 0; chunks.forEach(c => { raw.set(c, o); o += c.length; });
+      if (algo === 1) raw = await inflateZlib(raw);
+      out += e.copy + dec.decode(raw) + '\n';
+    } else if (e.defn) out += e.defn + '\n';
+  }
+  return out;
+}
+async function pgTarToSQL(files) {
+  const tocF = files.find(f => /(^|\/)toc\.dat$/.test(f.name)); const { toc } = pgReadToc(tocF.data), dec = new TextDecoder(); let out = '';
+  for (const e of toc) {
+    if (e.desc === 'TABLE DATA' && e.copy) {
+      const f = files.find(x => x.name.replace(/^.*\//, '') === (e.file || e.id + '.dat'));
+      out += e.copy + (f ? dec.decode(f.data) : '\\.\n') + '\n';
+    } else if (e.defn) out += e.defn + '\n';
+  }
+  return out;
+}
 async function importFile(file) {
   const m = $('fileMsg'); m.className = 'msg'; m.textContent = `Reading ${file.name}…`;
   if (file.size > 60 * 1024 * 1024) { m.className = 'msg err'; m.textContent = 'File is larger than 60 MB – please upload a smaller dump.'; return; }
@@ -885,13 +989,20 @@ async function importFile(file) {
     const looksTar = u8.length > 512 && new TextDecoder().decode(u8.subarray(257, 262)) === 'ustar';
     const looksZip = u8[0] === 0x50 && u8[1] === 0x4b;
     const looksSqlite = new TextDecoder().decode(u8.subarray(0, 15)) === 'SQLite format 3';
-    let db;
+    let db, pgText = null;
     const ctx = { ok: 0, skipped: 0, failed: 0, errors: [], notes: new Set(), tables: [], extra: { fks: [], pks: [] } };
     if (looksSqlite) { db = new SQL.Database(u8); }
     else {
+      const isPgCustom = u8.length > 5 && new TextDecoder().decode(u8.subarray(0, 5)) === 'PGDMP';
       if (looksTar) files = readTar(u8); else if (looksZip) files = await readZip(u8);
       else files = [{ name: file.name.replace(/\.gz$/i, ''), data: u8 }];
-      if (files.some(f => /(^|\/)toc\.dat$/.test(f.name))) throw new Error('This is a PostgreSQL tar/custom-format backup (binary). Please export plain SQL instead:  pg_dump --no-owner --inserts mydb > dump.sql');
+      const pgBinary = isPgCustom || files.some(f => /(^|\/)toc\.dat$/.test(f.name));
+      if (pgBinary) {
+        m.textContent = 'PostgreSQL backup detected – reading it in your browser…';
+        const sqlText = isPgCustom ? await pgCustomToSQL(u8) : await pgTarToSQL(files);
+        files = [{ name: 'restored.sql', data: new TextEncoder().encode(sqlText) }];
+      } else if (!looksTar && !looksZip && files.length === 1 && u8.subarray(0, 4096).includes(0))
+        throw new Error('This file is binary and is not a tar, zip, SQLite or PostgreSQL backup, so it cannot be read. Export your database as plain SQL (.sql) and upload that.');
       const dec = new TextDecoder(), usable = files.filter(f => /\.(sql|txt|csv|sqlite3?|db)$/i.test(f.name) && !/(^|\/)(\.|__MACOSX)/.test(f.name)).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
       if (!usable.length) throw new Error('No .sql, .csv or SQLite files found inside.' + (files.length ? ' Found: ' + files.slice(0, 5).map(f => f.name).join(', ') : ''));
       db = new SQL.Database();
@@ -1220,6 +1331,7 @@ window.addEventListener('resize', () => { positionBands(); });
 dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
 if (new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
+try { const k = sessionStorage.getItem('sqlLab.key'); if (k) $('apiKey').value = k; } catch (e) {}
 (async function boot() {
   const saved = store.get('sqlLab.sql', 'SELECT * FROM customers;');
   $('sql').value = saved; $('auto').checked = store.get('sqlLab.auto', '1') === '1';
@@ -1232,7 +1344,7 @@ if (new URLSearchParams(location.search).has('embed')) document.body.classList.a
     if (!store.get('sqlLab.ddl', '')) store.set('sqlLab.sample', '1');
     $('ddl').value = ddl; await applyDDL(ddl); fillExamples(); setConn();
     setStatus('Sandbox ready', 'ok'); schedule(0);
-    if (!store.get('sqlLab.seen', '')) { store.set('sqlLab.seen', '1'); openDlg('live'); }
+    if (!store.get('sqlLab.seen', '')) { store.set('sqlLab.seen', '1'); openDlg(HAS_BRIDGE ? 'live' : 'file'); }
   } catch (e) { setStatus(e.message, 'err'); }
 })();
 </script>
