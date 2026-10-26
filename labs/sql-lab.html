@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://api.anthropic.com; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>SQL Lab · Practice Lab</title>
+<link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg">
+<link rel="stylesheet" href="../assets/css/base.css">
+<link rel="stylesheet" href="../assets/css/dock.css">
+<link rel="stylesheet" href="../assets/css/sql-lab.css">
+</head>
+<body>
+<header>
+  <span class="brand">Practice Lab <em>@maduraigeorge</em></span>
+  <nav class="labnav" aria-label="Labs"></nav>
+  <button class="chip sand" id="conn" title="Database: connect a server, upload a file, create a schema or load the sample"><i></i><span id="connTxt">Sandbox</span></button>
+  <span class="status busy" id="status" role="status" aria-live="polite">Loading SQL engine…</span>
+  <span class="spacer"></span>
+  <select id="examples" aria-label="Sample queries" hidden></select>
+  <select id="mode" aria-label="Write mode" title="What happens to INSERT / UPDATE / DELETE on a live database" hidden>
+    <option value="readonly">🔒 Read-only</option>
+    <option value="rollback">↩️ Try writes (rolled back)</option>
+    <option value="commit">⚠️ Commit changes</option>
+  </select>
+  <label class="chk" title="Re-run SELECT queries automatically as you type (always off for live databases until you tick it)"><input type="checkbox" id="auto" checked> Live</label>
+  <button id="explainBtn" title="Show the database's own execution plan">Explain</button>
+  <button id="run" class="primary" title="Run (Ctrl+Enter). Runs the selection if you highlighted text. Tab accepts a suggestion.">▶ Run</button>
+</header>
+
+<main>
+  <section class="panel" id="p-code">
+    <h2><span class="num">1</span>SQL <span class="right"><button class="mini" id="fmt">Tidy</button></span></h2>
+    <div class="editor">
+      <div class="gutter"><pre id="gut">1</pre></div>
+      <div class="edwrap">
+        <pre id="hl" aria-hidden="true"></pre>
+        <textarea id="sql" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="SQL query"></textarea>
+      </div>
+      <div class="band" id="bandErr"></div>
+      <div class="ac mono" id="ac"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="p-steps">
+    <h2><span class="num">3</span>Step-by-step <span class="right"><label class="chk"><input type="checkbox" id="counts" checked> row counts</label></span></h2>
+    <div class="body" id="steps"><span class="empty">Type a query – each clause is explained here, in the order the database actually runs it.</span></div>
+  </section>
+
+  <section class="panel" id="p-result">
+    <h2><span class="num">2</span>Live result <span class="right"><button class="mini" id="csv" disabled>Download CSV</button></span></h2>
+    <div class="rtabs" id="rtabs" hidden></div>
+    <div class="body flush" id="result"><div class="pad empty">Run a query to see rows here.</div></div>
+    <div class="rmeta" id="rmeta" hidden></div>
+  </section>
+
+  <section class="panel" id="p-output">
+    <h2><span class="num">5</span>Output <span class="right"><button class="mini" id="clearLog">Clear</button></span></h2>
+    <div class="body" id="log"><span class="empty">Messages, timings and errors appear here.</span></div>
+  </section>
+
+  <section class="panel" id="p-visual">
+    <h2><span class="num">4</span>Visual – schema <span class="right" id="schemaMeta"></span></h2>
+    <div class="body" id="visual"><span class="empty">Connect to a database or load a sandbox to see its tables.</span></div>
+  </section>
+</main>
+
+<nav id="tabs" aria-label="Boxes">
+  <button data-t="code" class="on"><b>⌨</b>Query</button>
+  <button data-t="result"><b>▦</b>Result</button>
+  <button data-t="steps"><b>☰</b>Steps</button>
+  <button data-t="visual"><b>⌬</b>Schema</button>
+  <button data-t="output" id="tabOut"><b>▤</b>Output</button>
+</nav>
+
+<dialog id="dlg" aria-labelledby="dlgTitle">
+  <div class="dlg">
+    <header><strong id="dlgTitle">Database</strong><span class="spacer"></span><button id="dClose" aria-label="Close">✕</button></header>
+    <div class="dtabs"><button data-d="live" hidden>🔌 Connect</button><button data-d="file" class="on">📁 Upload file</button><button data-d="schema">✏️ Create schema</button></div>
+
+    <div class="dbody" id="d-live" hidden>
+      <div class="warnbox" id="bridgeWarn" hidden></div>
+      <div class="fld" id="liveForm">
+        <div class="seg">
+          <label><input type="radio" name="dbt" value="postgres" checked> PostgreSQL</label>
+          <label><input type="radio" name="dbt" value="mysql"> MySQL / MariaDB <span class="muted">(phpMyAdmin)</span></label>
+        </div>
+        <label class="wide">Connection URL (optional – fills the fields below)
+          <input type="text" id="f-url" placeholder="postgresql://user:password@host:5432/dbname" autocomplete="off"></label>
+        <label>Host<input type="text" id="f-host" value="localhost" autocomplete="off"></label>
+        <label>Port<input type="number" id="f-port" placeholder="5432"></label>
+        <label>Database name<input type="text" id="f-db" autocomplete="off"></label>
+        <label>User<input type="text" id="f-user" autocomplete="username"></label>
+        <label>Password<input type="password" id="f-pass" autocomplete="current-password"></label>
+        <label class="end"><span class="chk"><input type="checkbox" id="f-ssl"> Use SSL</span></label>
+      </div>
+      <p class="note" id="liveNote">phpMyAdmin is just a web page for MySQL – connect to the MySQL/MariaDB server behind it (usually host <code class="i">localhost</code>, port <code class="i">3306</code>, the same user and password). Your password goes only to the bridge on this computer, is held in memory and is never saved. Tip: use a <b>read-only database user</b> for real data.</p>
+      <div class="msg" id="liveMsg"></div>
+    </div>
+
+    <div class="dbody" id="d-file">
+      <div class="box" id="fdrop" role="button" tabindex="0">Click or drop a file here<br><span class="note">.sql · PostgreSQL backup (.dump / .tar) · .zip / .tar.gz · .csv · .sqlite</span><input type="file" id="dbFile" accept=".sql,.txt,.tar,.tgz,.gz,.zip,.csv,.sqlite,.sqlite3,.db,.dump,.backup" hidden></div>
+      <div class="msg" id="fileMsg"></div>
+      <details class="how">
+        <summary>How do I get a file from my server?</summary>
+        <ul class="steps-list">
+          <li><b>phpMyAdmin</b>: pick the database → <b>Export</b> → format <b>SQL</b> → Go.</li>
+          <li><b>pgAdmin</b>: right-click the database → <b>Backup…</b> (any format) – or run <code class="i">pg_dump --no-owner mydb &gt; dump.sql</code>.</li>
+        </ul>
+        <p class="note">PostgreSQL and MySQL dumps are cleaned up for the browser's SQLite engine; anything it can't run is skipped and listed. Your file never leaves your computer. For real live connections run the local bridge (<code class="i">bridge/start.bat</code>) – a Connect tab then appears here.</p>
+      </details>
+    </div>
+
+    <div class="dbody" id="d-schema" hidden>
+      <textarea id="ddl" spellcheck="false" aria-label="Schema SQL" placeholder="CREATE TABLE students (id INTEGER PRIMARY KEY, name TEXT);&#10;INSERT INTO students VALUES (1, 'Asha');"></textarea>
+      <div class="row"><button class="primary" id="applyDDL">Create tables</button><button id="tmpl">Template</button><button id="loadSample">Sample shop DB</button></div>
+      <details class="how">
+        <summary>✨ Generate with AI – from a description or a picture</summary>
+        <input type="password" id="apiKey" class="grow full" placeholder="Your Anthropic API key (kept only in this tab)" autocomplete="off">
+        <textarea id="descText" class="short" spellcheck="false" aria-label="Describe your tables" placeholder="e.g. A library with books, members and loans. Each loan links one member to one book."></textarea>
+        <div class="row"><button id="descBtn">Generate from description</button></div>
+        <div class="box" id="drop" role="button" tabindex="0">…or click / drop / paste (Ctrl+V) a picture of an ER diagram<input type="file" id="imgFile" accept="image/*" hidden></div>
+        <div class="row"><button id="readImg" disabled>Read schema from picture</button></div>
+      </details>
+      <div class="msg" id="sandMsg"></div>
+    </div>
+
+    <div class="dfoot"><button id="disc" hidden>Disconnect</button><span class="spacer"></span><button id="dCancel">Close</button><button class="primary" id="dConnect" hidden>Connect</button></div>
+  </div>
+</dialog>
+
+<div id="toast" role="alert"></div>
+<script type="module" src="../assets/js/sql-lab.js"></script>
+</body>
+</html>

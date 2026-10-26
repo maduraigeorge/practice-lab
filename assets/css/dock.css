@@ -1,0 +1,25 @@
+/* Docking layout manager (assets/js/dock.js): splits, gutters, minimised tray, window buttons, drop zones. */
+main.dk { display: flex; flex-direction: column; gap: 0; }
+.dk-split { display: flex; min-width: 0; min-height: 0; }
+.dk-split.h { flex-direction: row; } .dk-split.v { flex-direction: column; }
+.dk-split > .panel { min-width: 0; min-height: 0; }
+.dk-gut { flex: none; position: relative; touch-action: none; z-index: 3; }
+.dk-gut.h { width: 8px; cursor: col-resize; } .dk-gut.v { height: 8px; cursor: row-resize; }
+.dk-gut::before { content: ""; position: absolute; background: var(--border); border-radius: 3px; transition: background .15s; }
+.dk-gut.h::before { left: 2px; top: 50%; width: 4px; height: 32px; margin-top: -16px; }
+.dk-gut.v::before { top: 2px; left: 50%; height: 4px; width: 32px; margin-left: -16px; }
+.dk-gut:hover::before, .dk-gut.on::before { background: var(--accent); }
+#dkhold { display: none; }
+#dktray { display: none; flex: none; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+#dktray.on { display: flex; }
+#dktray button { padding: 1px 12px; font-size: 11px; min-height: 24px; }
+.panel > h2 { cursor: grab; user-select: none; }
+.panel > h2 .wc { margin-left: auto; display: inline-flex; gap: 3px; }
+.panel > h2 .right + .wc { margin-left: 6px; }
+.wb { padding: 0 6px !important; min-height: 0 !important; height: 18px; line-height: 1; font-size: 12px; border-radius: 99px !important; color: var(--muted) !important; background: transparent !important; border-color: transparent !important; box-shadow: none !important; text-transform: none; }
+.wb:hover { color: var(--text) !important; background: var(--chip) !important; }
+.dk-zone { position: fixed; z-index: 60; pointer-events: none; background: var(--accent-soft); border: 2px dashed var(--accent); border-radius: 10px; display: none; }
+.dk-ghost { position: fixed; z-index: 61; pointer-events: none; padding: 3px 11px; background: var(--accent); color: #fff; border-radius: 8px; font-size: 12px; opacity: .92; }
+body.dragging { user-select: none; cursor: grabbing !important; }
+body.dragging * { cursor: grabbing !important; }
+#layoutSel { max-width: 130px; }

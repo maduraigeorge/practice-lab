@@ -1,0 +1,80 @@
+/* Flowchart & pseudocode lab – lab-specific styles (shared design system lives in base.css). */
+
+/* editor with syntax highlight overlay */
+.edwrap { position: relative; flex: 1; min-width: 0; }
+#hl, #code { position: absolute; inset: 0; margin: 0; border: 0; padding: 8px 10px; font-size: 13px; line-height: 20px; white-space: pre; tab-size: 2; overflow: auto; }
+#hl { overflow: hidden; pointer-events: none; color: var(--text); }
+#code { background: transparent; color: transparent; caret-color: var(--text); resize: none; outline: 0; }
+#code::selection { background: var(--accent-soft); color: transparent; }
+.t-kw { color: var(--kw); font-weight: 700; } .t-str { color: var(--str); } .t-num { color: var(--num); } .t-cmt { color: var(--cmt); font-style: italic; } .t-fn { color: var(--fn); }
+
+/* flowchart */
+.chart-box { position: relative; background: var(--code-bg); }
+#chart { display: block; margin: 0 auto; }
+#chart.stale { opacity: .35; }
+#chartEmpty { position: absolute; inset: 0; }
+.fc-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.fc-arrowhead { fill: var(--muted); }
+.fc-label { font: 700 11px var(--font-title); fill: var(--muted); }
+.fc-text { font: 600 12px var(--font-text); fill: var(--text); text-anchor: middle; pointer-events: none; }
+.fc-node { cursor: pointer; outline: none; }
+.fc-node rect, .fc-node polygon { stroke-width: 2; transition: stroke-width .15s, filter .15s; }
+.fc-node.process rect { fill: color-mix(in srgb, var(--c-trace) 17%, var(--panel)); stroke: var(--c-trace); }
+.fc-node.io polygon { fill: color-mix(in srgb, var(--c-visual) 15%, var(--panel)); stroke: var(--c-visual); }
+.fc-node.decision polygon { fill: color-mix(in srgb, var(--c-steps) 20%, var(--panel)); stroke: var(--c-steps); }
+.fc-node.start rect { fill: color-mix(in srgb, var(--c-result) 22%, var(--panel)); stroke: var(--c-result); }
+.fc-node.end rect { fill: color-mix(in srgb, var(--bad) 18%, var(--panel)); stroke: var(--bad); }
+.fc-node.join circle { fill: var(--muted); }
+.fc-node:hover rect, .fc-node:hover polygon, .fc-node:focus-visible rect, .fc-node:focus-visible polygon { stroke-width: 3; }
+.fc-node.seen rect, .fc-node.seen polygon { stroke-width: 3; }
+.fc-node.active rect, .fc-node.active polygon { stroke: var(--accent-bright); stroke-width: 4; filter: drop-shadow(0 0 6px var(--accent-bright)); }
+.fc-edge.seen .fc-line { stroke: var(--accent-bright); stroke-width: 2.4; }
+.fc-edge.last .fc-line { stroke: var(--good); stroke-width: 3.4; }
+
+/* steps list (same look as the Python lab) */
+.controls { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 2px solid var(--border); flex-wrap: wrap; flex: none; }
+.controls input[type=range] { flex: 1; min-width: 80px; }
+.controls .count { color: var(--muted); font-size: 12px; min-width: 56px; text-align: right; font-weight: 600; }
+.step { display: flex; gap: 8px; padding: 5px 8px; border-radius: 12px; cursor: pointer; border: 2px solid transparent; }
+.step:hover { background: var(--chip); }
+.step.active { background: var(--accent-soft); border-color: var(--accent-bright); }
+.step .n { color: var(--muted); font-size: 11.5px; min-width: 26px; text-align: right; padding-top: 1px; }
+.step .ln { color: var(--accent); font-size: 11.5px; min-width: 32px; padding-top: 1px; font-weight: 700; }
+.step .tx { flex: 1; min-width: 0; }
+.step.k-decision .ln { color: var(--c-steps); } .step.k-output .ln { color: var(--c-visual); }
+.step.k-err { background: var(--bad-soft); }
+.src { display: block; color: var(--muted); font-size: 11.5px; margin-top: 1px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+
+/* visual: variables + trace table */
+.vtabs { display: inline-flex; gap: 4px; }
+.vtabs .on { background: var(--accent-bright); color: #fff; border-color: var(--accent-bright); }
+.vars { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; align-items: start; }
+.var { border: 2px solid var(--border); border-radius: 14px; padding: 6px 9px; background: var(--code-bg); }
+.var.chg { border-color: var(--accent-bright); box-shadow: 0 0 0 3px var(--accent-soft); }
+.var .hd { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.var .nm { font-weight: 700; font-size: 13px; }
+.var .bd { margin-left: auto; background: var(--accent-bright); color: #fff; font: 700 9.5px var(--font-title); border-radius: 99px; padding: 1px 7px; text-transform: uppercase; }
+.val { display: inline-block; border: 1px solid var(--border); border-radius: 8px; padding: 1px 8px; background: var(--panel); word-break: break-all; }
+.cells { display: flex; flex-wrap: wrap; gap: 4px; }
+.cell { text-align: center; }
+.cell .v { border: 1px solid var(--border); background: var(--panel); border-radius: 7px; padding: 1px 8px; min-width: 32px; }
+.cell .ix { font-size: 10.5px; color: var(--muted); }
+.trace { border-collapse: collapse; font-size: 12px; min-width: 100%; }
+.trace th { position: sticky; top: 0; background: var(--chip); text-align: left; padding: 3px 8px; border-bottom: 2px solid var(--border); white-space: nowrap; font: 700 11px var(--font-title); }
+.trace td { padding: 2px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.trace tr.cur td { background: var(--accent-soft); font-weight: 600; }
+.trace td.chg { color: var(--accent); font-weight: 700; }
+.trace td.n { color: var(--muted); }
+
+/* output + goal */
+pre.out { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+.errbox { margin-top: 8px; padding: 8px 10px; border-left: 4px solid var(--bad); background: var(--bad-soft); border-radius: 8px; }
+.errbox b { color: var(--bad); }
+.hint { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.goal { margin-bottom: 8px; padding: 8px 10px; border: 2px solid var(--c-output); border-radius: 14px; background: color-mix(in srgb, var(--c-output) 10%, var(--panel)); }
+.goal h3 { margin: 0 0 2px; font: 700 12px var(--font-title); text-transform: uppercase; letter-spacing: .04em; }
+.goal .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.goal .pass { color: var(--good); font-weight: 700; } .goal .fail { color: var(--bad); font-weight: 700; }
+.goal ul { margin: 4px 0 0; padding-left: 18px; }
+.pad { padding: 10px 12px; }
+@media (max-width: 900px) { .controls input[type=range] { order: 9; flex: 1 1 100%; } .controls .count { margin-left: auto; } #hl, #code { font-size: 14px; } }

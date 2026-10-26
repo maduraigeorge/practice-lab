@@ -1,0 +1,14 @@
+{
+  "name": "practice-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Practice Lab – Python, SQL and Flowchart/Pseudocode labs that run in the browser.",
+  "scripts": {
+    "test:js": "node --test tests/js",
+    "test:py": "python -m pytest tests/unit",
+    "test": "npm run test:js && npm run test:py"
+  },
+  "license": "MIT",
+  "author": "maduraigeorge"
+}

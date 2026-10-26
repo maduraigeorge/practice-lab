@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>Python Lab · Practice Lab</title>
+<link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg">
+<link rel="stylesheet" href="../assets/css/base.css">
+<link rel="stylesheet" href="../assets/css/dock.css">
+<link rel="stylesheet" href="../assets/css/python-lab.css">
+</head>
+<body>
+<header>
+  <span class="brand">Practice Lab <em>@maduraigeorge</em></span>
+  <nav class="labnav" aria-label="Labs"></nav>
+  <span id="status" class="status busy" role="status" aria-live="polite">Loading Python… (first load takes a few seconds)</span>
+  <span class="spacer"></span>
+  <select id="examples" aria-label="Example programs"></select>
+  <span class="popwrap">
+    <button id="stdinBtn" title="Values for input() – one line per call">⌨ Input</button>
+    <div class="popover" id="stdinPop" hidden>
+      <label for="stdin">Values for <code class="i">input()</code> – one line each</label>
+      <textarea id="stdin" spellcheck="false" placeholder="e.g. Asha"></textarea>
+    </div>
+  </span>
+  <button id="stopBtn" class="danger" hidden title="Stop the running program">⏹ Stop</button>
+  <button id="reset" title="Clear the editor">Clear</button>
+</header>
+
+<main>
+  <section class="panel" id="p-code">
+    <h2><span class="num">1</span>Code <span class="right">runs live as you type</span></h2>
+    <div class="editor">
+      <div class="gutter"><pre id="gut">1</pre></div>
+      <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Python code"></textarea>
+      <div class="band cur" id="bandCur"></div>
+      <div class="band err" id="bandErr"></div>
+      <div class="ac mono" id="ac"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="p-steps">
+    <h2><span class="num">3</span>Step-by-step</h2>
+    <div class="controls">
+      <button id="first" title="First step" aria-label="First step">⏮</button>
+      <button id="prev" title="Previous step (←)" aria-label="Previous step">◀</button>
+      <button id="play" class="primary" title="Play / pause">▶ Play</button>
+      <button id="next" title="Next step (→)" aria-label="Next step">▶</button>
+      <button id="last" title="Last step" aria-label="Last step">⏭</button>
+      <input type="range" id="slider" min="0" max="0" value="0" aria-label="Step">
+      <select id="speed" aria-label="Playback speed"><option value="1100">Slow</option><option value="600" selected>Normal</option><option value="250">Fast</option></select>
+      <span class="count" id="count">0 / 0</span>
+    </div>
+    <div class="body" id="steps"><span class="empty">Write some code – each line that runs is explained here.</span></div>
+  </section>
+
+  <section class="panel" id="p-visual">
+    <h2><span class="num">4</span>Visual <span class="right">memory after the selected step</span></h2>
+    <div class="body" id="visual"><span class="empty">Variables will appear here.</span></div>
+  </section>
+
+  <section class="panel" id="p-result">
+    <h2><span class="num">2</span>Live result <span class="right" id="resMeta"></span></h2>
+    <div class="body" id="result"><span class="empty">Final values appear here.</span></div>
+  </section>
+
+  <section class="panel" id="p-output">
+    <h2><span class="num">5</span>Output <span class="right">print() output &amp; errors</span></h2>
+    <div class="body" id="output"><span class="empty">Nothing printed yet.</span></div>
+  </section>
+</main>
+
+<nav id="tabs" aria-label="Boxes">
+  <button data-t="code" class="on"><b>⌨</b>Code</button>
+  <button data-t="result"><b>✔</b>Result</button>
+  <button data-t="steps"><b>☰</b>Steps</button>
+  <button data-t="visual"><b>▦</b>Visual</button>
+  <button data-t="output" id="tabOut"><b>▤</b>Output</button>
+</nav>
+
+<div id="toast" role="alert"></div>
+<script type="module" src="../assets/js/python-lab.js"></script>
+</body>
+</html>

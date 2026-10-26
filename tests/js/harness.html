@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>JS tests</title>
+<script type="importmap">{"imports":{"node:test":"./shims/nodetest.js","node:assert/strict":"./shims/nodeassert.js"}}</script>
+</head><body><pre id="out">running…</pre>
+<script type="module">
+  const t = await import('./shims/nodetest.js');
+  await import('./pseudo.test.mjs');
+  await import('./sql.test.mjs');
+  const r = await t.done();
+  window.__results = r;
+  document.getElementById('out').textContent = r.map(x => (x.ok ? 'PASS ' : 'FAIL ') + x.name + (x.ok ? '' : ' — ' + x.error)).join('\n');
+</script></body></html>

@@ -1,0 +1,7 @@
+/* Shell page: three lab frames, only one visible. Each lab draws its own (single) header bar. */
+:root { color-scheme: light dark; --bg: #e3efff; --text: #2d2d2d; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0e1a2b; --text: #f0ece3; } }
+html, body { margin: 0; height: 100%; height: 100dvh; background: var(--bg); color: var(--text); overflow: hidden; font: 14px system-ui, sans-serif; }
+iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); display: none; color-scheme: light dark; }
+iframe.on { display: block; }
+.nojs { padding: 24px; }

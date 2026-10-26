@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
-"""Practice Lab (Python + SQL) - local bridge.
+"""Practice Lab - local bridge (optional).
 
-Browsers cannot open TCP connections to PostgreSQL / MySQL, so this tiny server does it
-for the page. It listens on 127.0.0.1 only, keeps credentials in memory only, and serves
-index.html.
+The labs are static web pages and work on their own (GitHub Pages). A browser cannot open TCP connections to
+PostgreSQL / MySQL, so this small server does that for the SQL lab. It also serves the site itself.
 
-    pip install "psycopg[binary]" pymysql
-    python server.py            (then open http://127.0.0.1:8765)
+Security model
+  * listens on 127.0.0.1 only (never on the network);
+  * every request must carry a Host header for this exact address (blocks DNS-rebinding);
+  * state-changing requests need JSON, a same-origin Origin header and a per-run secret token that only same-origin
+    pages can read (blocks cross-site requests);
+  * credentials live in memory only and are dropped after 30 minutes of inactivity;
+  * only whitelisted static files are served (never this folder, tests or dotfiles).
+
+Usage:  pip install -r requirements.txt   then   python server.py   ->  http://127.0.0.1:8765
 """
 import argparse
-import base64
-import glob
 import hmac
-import shutil
-import subprocess
-import tempfile
 import json
+import mimetypes
 import os
+import re
 import secrets
 import threading
 import time
@@ -26,6 +29,7 @@ import webbrowser
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import unquote
 
 try:
     import psycopg
@@ -38,7 +42,16 @@ except ImportError:
     pymysql = None
 
 HERE = Path(__file__).resolve().parent
-TOKEN = secrets.token_urlsafe(24)       # embedded in the served page; guards every /api POST
+ROOT = HERE.parent                      # the static site (index.html, labs/, assets/)
+TOKEN = secrets.token_urlsafe(24)       # per-run secret; only same-origin pages can read it via /api/session
+MAX_SESSIONS = 5
+MAX_BODY = 14 * 1024 * 1024
+STATIC_DIRS = ('labs', 'assets')
+STATIC_EXT = {'.html', '.css', '.js', '.py', '.svg', '.woff2', '.wasm', '.json', '.txt', '.png', '.ico', '.md'}
+mimetypes.add_type('text/javascript', '.js')
+mimetypes.add_type('application/wasm', '.wasm')
+mimetypes.add_type('font/woff2', '.woff2')
+mimetypes.add_type('text/x-python', '.py')
 ROW_LIMIT = 500
 STATEMENT_TIMEOUT_MS = 15000
 IDLE_SECONDS = 30 * 60
@@ -191,6 +204,13 @@ def api_connect(p):
     except Exception as e:  # driver errors: bad password, host unreachable, unknown db ...
         raise ApiError(describe_error(e)['message'])
     token = secrets.token_urlsafe(24)
+    with SESSIONS_LOCK:
+        if len(SESSIONS) >= MAX_SESSIONS:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise ApiError('Too many open connections - disconnect one first.')
     s = Session(kind, conn, f'{user}@{host}:{port}/{dbname}')
     if kind == 'postgres':
         conn.add_notice_handler(lambda d: s.notices.append(d.message_primary or str(d)))
@@ -254,12 +274,63 @@ def collect(cur, limit):
     return sets
 
 
+_TX_CONTROL = re.compile(
+    r'^\s*(commit|end|abort|begin|start\s+transaction|set\s+(session|local)?\s*(characteristics|transaction|default_transaction_\w+|transaction_read_only)'
+    r'|set\s+transaction_read_only|reset\s+(all|transaction_read_only|default_transaction_read_only)|savepoint|release|rollback\s+to)\b', re.I)
+
+
+def _mask_sql(sql):
+    """Blank out comments and quoted text so statements can be split on ';' safely."""
+    out, i, n = [], 0, len(sql)
+    while i < n:
+        c = sql[i]
+        if sql.startswith('--', i):
+            j = sql.find('\n', i); j = n if j < 0 else j
+            out.append(' ' * (j - i)); i = j
+        elif sql.startswith('/*', i):
+            j = sql.find('*/', i + 2); j = n if j < 0 else j + 2
+            out.append(' ' * (j - i)); i = j
+        elif c in ("'", '"', '`') or (c == '$' and re.match(r'\$\w*\$', sql[i:])):
+            if c == '$':
+                tag = re.match(r'\$\w*\$', sql[i:]).group(0)
+                j = sql.find(tag, i + len(tag)); j = n if j < 0 else j + len(tag)
+            else:
+                j = i + 1
+                while j < n:
+                    if sql[j] == c:
+                        if j + 1 < n and sql[j + 1] == c:
+                            j += 2; continue
+                        break
+                    j += 1
+                j = min(j + 1, n)
+            out.append(' ' * (j - i)); i = j
+        else:
+            out.append(c); i += 1
+    return ''.join(out)
+
+
+def check_guard(sql, mode):
+    """Read-only / try-it modes must not be able to leave their transaction. This is a convenience guard, NOT a
+    security boundary - for real data connect with a database user that only has SELECT rights."""
+    if mode == 'commit':
+        return
+    for st in _mask_sql(sql).split(';'):
+        if _TX_CONTROL.match(st):
+            raise ApiError('Transaction-control statements (COMMIT, BEGIN, SET TRANSACTION ...) are not allowed in this mode. '
+                           'Switch to "Commit changes" if you really need them.')
+
+
 def api_query(p):
     s = get_session(p)
     sql = p.get('sql') or ''
     mode = p.get('mode', 'readonly')       # readonly | rollback | commit
+    if mode not in ('readonly', 'rollback', 'commit'):
+        raise ApiError('Unknown mode.')
     if not sql.strip():
         raise ApiError('Nothing to run.')
+    if len(sql) > 200000:
+        raise ApiError('That query is too long.')
+    check_guard(sql, mode)
     with s.lock:
         conn, t0 = s.conn, time.time()
         s.notices.clear()
@@ -340,59 +411,42 @@ def api_describe(p):
     return ask_claude(p, [{'type': 'text', 'text': DESCRIBE_PROMPT.replace('{text}', text)}])
 
 
-def find_pg_restore():
-    env = os.environ.get('PG_RESTORE')
-    if env and os.path.exists(env):
-        return env
-    w = shutil.which('pg_restore')
-    if w:
-        return w
-    pats = [r'C:\Program Files\PostgreSQL\*\bin\pg_restore.exe', r'C:\Program Files (x86)\PostgreSQL\*\bin\pg_restore.exe',
-            '/usr/lib/postgresql/*/bin/pg_restore', '/opt/homebrew/opt/postgresql*/bin/pg_restore',
-            '/usr/local/opt/postgresql*/bin/pg_restore', '/Applications/Postgres.app/Contents/Versions/*/bin/pg_restore']
-    found = sorted(sum((glob.glob(x) for x in pats), []), key=lambda s: [int(n) for n in __import__('re').findall(r'\d+', s)] or [0])
-    return found[-1] if found else None
-
-
-def api_pgrestore(p):
-    exe = find_pg_restore()
-    if not exe:
-        raise ApiError('pg_restore was not found on this computer. Install PostgreSQL (or add its bin folder to PATH), '
-                       'or run  pg_restore -f dump.sql --no-owner yourfile  yourself and upload dump.sql.')
-    raw = base64.b64decode(p.get('data') or '')
-    fd, path = tempfile.mkstemp(suffix='.dump')
-    try:
-        with os.fdopen(fd, 'wb') as f:
-            f.write(raw)
-        r = subprocess.run([exe, '-f', '-', '--no-owner', '--no-privileges', path], capture_output=True, timeout=180)
-    except subprocess.TimeoutExpired:
-        raise ApiError('pg_restore took too long.')
-    finally:
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-    if r.returncode != 0 and not r.stdout:
-        raise ApiError('pg_restore could not read this file: ' + r.stderr.decode('utf-8', 'replace')[:300])
-    return {'text': r.stdout.decode('utf-8', 'replace')}
-
-
 ROUTES = {'connect': api_connect, 'query': api_query, 'schema': api_schema,
-          'disconnect': api_disconnect, 'vision': api_vision, 'describe': api_describe, 'pgrestore': api_pgrestore}
+          'disconnect': api_disconnect, 'vision': api_vision, 'describe': api_describe}
 
 
 # ---------------------------------------------------------------- http
 
+CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; "
+       "connect-src 'self' https://api.anthropic.com; worker-src 'self'; frame-src 'self'; frame-ancestors 'self'; "
+       "base-uri 'none'; form-action 'none'; object-src 'none'")
+HTML_HEADERS = {'Content-Security-Policy': CSP, 'X-Frame-Options': 'SAMEORIGIN', 'Cross-Origin-Opener-Policy': 'same-origin'}
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = 'SQLLab/1.0'
+    server_version = 'PracticeLab'
+    sys_version = ''
+    protocol_version = 'HTTP/1.1'
 
     def log_message(self, *a):
-        pass
+        pass                                    # never log request lines (they could contain secrets)
+
+    # -- guards ---------------------------------------------------------------------------------
+    def _allowed_hosts(self):
+        port = self.server.server_address[1]
+        return {f'127.0.0.1:{port}', f'localhost:{port}', f'[::1]:{port}'}
 
     def _host_ok(self):
-        return self.headers.get('Host', '').rsplit(':', 1)[0] in ('127.0.0.1', 'localhost')
+        return self.headers.get('Host', '').lower() in self._allowed_hosts()
 
-    def _send(self, code, body, ctype='application/json; charset=utf-8'):
+    def _origin_ok(self):
+        origin = self.headers.get('Origin')
+        if origin is None:
+            return self.headers.get('Sec-Fetch-Site', 'same-origin') in ('same-origin', 'none')
+        return origin.lower() in {f'http://{h}' for h in self._allowed_hosts()}
+
+    # -- responses ------------------------------------------------------------------------------
+    def _send(self, code, body, ctype='application/json; charset=utf-8', extra=None):
         if not isinstance(body, (bytes, str)):
             body = json.dumps(body, default=_default)
         if isinstance(body, str):
@@ -402,46 +456,86 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != 'HEAD':
+            self.wfile.write(body)
+
+    def _static(self, rel):
+        rel = unquote(rel).lstrip('/') or 'index.html'
+        if '\x00' in rel or '\\' in rel or ':' in rel:
+            return self._send(404, {'error': 'not found'})
+        try:
+            target = (ROOT / rel).resolve()
+        except (OSError, ValueError):
+            return self._send(404, {'error': 'not found'})
+        # Allowed: the root index.html, or a file that really lives inside labs/ or assets/ after resolving "..", links etc.
+        inside = any((ROOT / d).resolve() in target.parents for d in STATIC_DIRS)
+        allowed = (target == ROOT / 'index.html') or inside
+        parts = target.relative_to(ROOT).parts if ROOT in target.parents else ()
+        if (not allowed or not target.is_file() or target.suffix.lower() not in STATIC_EXT
+                or any(p.startswith('.') for p in parts)
+                or (target.suffix.lower() == '.py' and parts[:2] != ('assets', 'py'))):
+            return self._send(404, {'error': 'not found'})
+        try:
+            data = target.read_bytes()
+        except OSError:
+            return self._send(404, {'error': 'not found'})
+        ctype = mimetypes.guess_type(target.name)[0] or 'application/octet-stream'
+        if ctype.startswith('text/') or ctype in ('application/json',):
+            ctype += '; charset=utf-8'
+        self._send(200, data, ctype, HTML_HEADERS if target.suffix.lower() == '.html' else None)
+
+    # -- verbs ----------------------------------------------------------------------------------
+    def do_HEAD(self):
+        self.do_GET()
 
     def do_GET(self):
         if not self._host_ok():
             return self._send(403, {'error': 'bad host'})
-        path = self.path.split('?')[0]
-        pages = {'/': 'index.html', '/index.html': 'index.html', '/python.html': 'python.html', '/sql.html': 'sql.html'}
-        if path in pages:
-            html = (HERE / pages[path]).read_text(encoding='utf-8').replace('__BRIDGE_TOKEN__', TOKEN)
-            return self._send(200, html, 'text/html; charset=utf-8')
+        path = self.path.split('?')[0].split('#')[0]
+        if path == '/api/session':
+            if not self._origin_ok():
+                return self._send(403, {'error': 'cross-site request refused'})
+            return self._send(200, {'token': TOKEN, 'postgres': psycopg is not None, 'mysql': pymysql is not None,
+                                    'hasKey': bool(os.environ.get('ANTHROPIC_API_KEY'))})
+        if path.startswith('/api/'):
+            return self._send(404, {'error': 'not found'})
         if path == '/favicon.ico':
             return self._send(204, b'', 'image/x-icon')
-        if path == '/api/ping':
-            return self._send(200, {'postgres': psycopg is not None, 'mysql': pymysql is not None,
-                                    'hasKey': bool(os.environ.get('ANTHROPIC_API_KEY'))})
-        self._send(404, {'error': 'not found'})
+        self._static(path)
 
     def do_POST(self):
-        if not self._host_ok():
-            return self._send(403, {'ok': False, 'error': 'bad host'})
+        if not self._host_ok() or not self._origin_ok():
+            return self._send(403, {'ok': False, 'error': {'message': 'Request refused.'}})
         if not hmac.compare_digest(self.headers.get('X-Bridge-Token', ''), TOKEN):
-            return self._send(403, {'ok': False, 'error': 'Bad bridge token - reload the page.'})
+            return self._send(403, {'ok': False, 'error': {'message': 'Bad bridge token - reload the page.'}})
+        if not self.headers.get('Content-Type', '').lower().startswith('application/json'):
+            return self._send(415, {'ok': False, 'error': {'message': 'JSON required.'}})
         name = self.path.split('?')[0].removeprefix('/api/')
         fn = ROUTES.get(name)
         if not fn:
-            return self._send(404, {'ok': False, 'error': 'unknown endpoint'})
+            return self._send(404, {'ok': False, 'error': {'message': 'unknown endpoint'}})
         try:
-            n = int(self.headers.get('Content-Length', 0))
-            if n > 14 * 1024 * 1024:
+            n = int(self.headers.get('Content-Length', '0'))
+            if n < 0 or n > MAX_BODY:
                 raise ApiError('Request too large.')
             payload = json.loads(self.rfile.read(n) or b'{}')
+            if not isinstance(payload, dict):
+                raise ApiError('Bad request.')
             out = fn(payload)
             if 'ok' not in out:
                 out['ok'] = True
             self._send(200, out)
         except ApiError as e:
             self._send(200, {'ok': False, 'error': {'message': str(e)}, **e.extra})
-        except Exception as e:
-            self._send(200, {'ok': False, 'error': {'message': f'Server error: {e}'}})
+        except (ValueError, KeyError, TypeError):
+            self._send(400, {'ok': False, 'error': {'message': 'Bad request.'}})
+        except Exception:                                    # never leak internals
+            self._send(500, {'ok': False, 'error': {'message': 'Internal error in the bridge.'}})
 
 
 def reaper():
@@ -465,8 +559,10 @@ def main():
     a = ap.parse_args()
     threading.Thread(target=reaper, daemon=True).start()
     srv = ThreadingHTTPServer(('127.0.0.1', a.port), Handler)
+    srv.daemon_threads = True
     url = f'http://127.0.0.1:{a.port}/'
-    print(f'Practice Lab (Python + SQL) running at {url}   (Ctrl+C to stop)')
+    print(f'Practice Lab running at {url}   (Ctrl+C to stop)')
+    print('  Only reachable from this computer. Passwords stay in memory and are never written to disk.')
     print('  PostgreSQL driver:', 'ok' if psycopg else 'missing  ->  pip install "psycopg[binary]"')
     print('  MySQL driver     :', 'ok' if pymysql else 'missing  ->  pip install pymysql')
     if not a.no_browser:
