@@ -40,7 +40,7 @@ By **[@maduraigeorge](https://github.com/maduraigeorge)** · MIT licensed · [Ch
 | **Write** | Python 3 (real CPython via WebAssembly) | SQL (SQLite in the browser) | Simple pseudocode |
 | **Live result** | final values, last expression | result grid, CSV download | – |
 | **Step-by-step** | every line, with plain-English notes for each expression (`s[::-1]`, `//`, `.split()`, f-strings, comprehensions …) | every clause *in the order the database runs it*, with row counts after each step | every flowchart box, with the real values substituted in (`x + 1 → 4 + 1 = 5`) |
-| **Visual** | variable cards, lists as indexed cells, aliasing (`b = a`), call stack | schema diagram – drag tables, foreign keys, highlights what your query uses | flowchart with the running box lit up and the path walked + trace table |
+| **Visual** | **Frames & Objects** like Python Tutor: frames on the left, lists/dicts/functions on the right, arrows for references (so `b = a` visibly shares one list) – or plain variable cards | schema diagram – drag tables, foreign keys, highlights what your query uses | flowchart with the running box lit up and the path walked + trace table |
 | **Output** | `print()` output and friendly errors | messages, timings, errors with hints | output, errors, and practice-test results |
 | **Practice** | examples | sample shop database, upload your own | 8 examples + 9 auto-checked exercises |
 
@@ -88,8 +88,12 @@ Keyboard: **Alt+1 / Alt+2 / Alt+3** switch labs · **Ctrl+Enter** run (SQL) · *
   `// % **`, comparisons, `and/or/not`, `in`, f-strings, comprehensions, lambdas, `x += 1`, tuple unpacking and swaps.
   The explainer evaluates sub-expressions with a **whitelisted evaluator that only touches built-in types** – it can never
   run your code a second time or change anything.
-* **Visual** shows the variables after the selected step – lists as indexed cells, dictionaries as tables, names that
-  point to the *same* object (🔗), and the call stack for recursion. Changed variables glow.
+* **Visual → Frames** (default) draws what is in memory after the selected step, in the style of Python Tutor: a *Global frame*
+  plus one frame per active function call (recursion shows a frame per call) on the left; lists, tuples, dictionaries, sets,
+  functions and objects on the right; **arrows** from names (and from cells inside lists/dicts) to the objects they refer to.
+  Two names pointing at the same list share **one** box – aliasing is obvious. Changed variables and the *Return value* are
+  highlighted. **Visual → Cards** shows one card per variable instead. When the program finishes without an error the last step is *The program has finished*, showing the
+  final state of everything.
 * **Endless loops** (`while True: pass`, or a loop whose variables never change) are detected within a fraction of a second
   and stopped with a clear alert. **Big calculations are allowed**: after 4 s a *Stop* button appears; after 2 min the run is
   stopped. Steps are recorded for the first 600 lines executed; the program still runs to the end.
@@ -104,13 +108,16 @@ Keyboard: **Alt+1 / Alt+2 / Alt+3** switch labs · **Ctrl+Enter** run (SQL) · *
 * **Visual**: the schema as a diagram; tables and columns your query uses are highlighted. Double-click a table to query it.
 * The database engine runs in a worker with a **15 s watchdog**: a runaway query (say, an endless recursive CTE) is stopped and
   your database is restored – the page never hangs.
-* **Explain** shows SQLite's own execution plan. **Tidy** formats your query. **Download CSV** exports a result.
+* **Explain** shows SQLite's own execution plan. **Tidy** formats your query (text in quotes and `--` comments are never touched).
+  **Download CSV** exports a result (cells that start with `=`, `+`, `-` or `@` get a leading `'` so spreadsheets do not run them).
+* Run-while-typing (**Live**) only re-runs statements that cannot change data (no `INSERT/UPDATE/DELETE/CREATE/INTO …`, even
+  inside a `WITH`).
 
 ### Getting data in – click the database badge in the header
 
 | Tab | What it does |
 |---|---|
-| **📁 Upload file** | `.sql` dumps (**PostgreSQL** `pg_dump` and **MySQL / phpMyAdmin** exports are cleaned up automatically), **PostgreSQL backups** in custom (`-Fc`) and tar (`-Ft`) format, `.zip` / `.tar` / `.tar.gz` archives with several files, `.csv` (one table per file), `.sqlite` / `.db`. Server-only statements are skipped and listed, never silently dropped. |
+| **📁 Upload file** | `.sql` dumps (**PostgreSQL** `pg_dump` and **MySQL / phpMyAdmin** exports are cleaned up automatically; UTF-8 and UTF-16 files), **PostgreSQL backups** in custom (`-Fc`) and tar (`-Ft`) format, `.zip` / `.tar` / `.tar.gz` archives with several files, `.csv` (one table per file; `,` `;` tab or `\|` separated; zip codes and phone numbers with leading zeros stay text), `.sqlite` / `.db`. Server-only statements are skipped and **listed by kind** in the Output box (for example *SET ×12, GRANT ×3*), never silently dropped; a backup that was written to a pipe (so it contains no table data) is reported too. |
 | **✏️ Create schema** | Type `CREATE TABLE …` yourself, load a template or the sample, or ✨ **generate with AI** from a written description or a **picture** of an ER diagram (needs your own Anthropic API key – it is only sent from your browser to Anthropic and never stored). |
 | **🔌 Connect** | Only appears when the [local bridge](#optional-connect-a-real-database-the-local-bridge) is running: connect to a live PostgreSQL / MySQL / MariaDB (phpMyAdmin) server. |
 
@@ -130,7 +137,8 @@ exam-style table: one row per step, one column per variable.
 
 ### The pseudocode language
 
-Case-insensitive. Indent however you like. `//` or `#` start a comment. Lists are **0-indexed**.
+Case-insensitive. Indent however you like. `//` or `#` start a comment. Lists are **0-indexed**; you can read nested lists
+(`a[1][0]`) but change only one level (`a[i] = 5`). Names may use any letters (`café`).
 
 | You want to… | Write |
 |---|---|
@@ -147,7 +155,8 @@ Case-insensitive. Indent however you like. `//` or `#` start a comment. Lists ar
 
 **Expressions** – numbers, `"text"`, `TRUE` / `FALSE`, lists `[1, 2, 3]`, `a[i]`; `+ - * /` (decimal division),
 `DIV` (whole-number division), `MOD` (remainder), `^` (power), `+` also joins text; comparisons `= != <> < > <= >=`
-(inside a condition `=` *compares*); `AND OR NOT`.
+(inside a condition `=` *compares*); `AND OR NOT`. `DIV` and `MOD` round down (floor), so `-7 MOD 3 = 2`. Numbers are compared with a tiny
+tolerance, so `0.1 + 0.2 = 0.3` is TRUE and `FOR x = 0 TO 0.3 STEP 0.1` runs four times.
 **Functions** – `LEN ABS SQRT FLOOR CEIL ROUND MIN MAX SUM UPPER LOWER STR INT FLOAT SUBSTR`.
 
 ```text
@@ -184,7 +193,8 @@ The practice tests use their own inputs – the Input box is ignored while you p
 
 Syntax problems are caught with the line number and a plain explanation (*"This IF has no ENDIF."*). Runtime problems too
 (*"The variable "y" has no value yet…"*, *"Position 5 is outside a – valid positions are 0 to 1"*, *"Division by zero"*).
-A loop that repeats forever is detected and stopped.
+A loop that repeats forever is detected and stopped; a run is also cut off after 60 000 steps or 2 seconds, and values over
+200 000 list items / 1 000 000 characters are refused, so the page can never freeze.
 
 ---
 
@@ -232,7 +242,11 @@ python -m pip install -r requirements.txt     # psycopg (PostgreSQL) + PyMySQL (
 python server.py                              # options: --port 8765  --no-browser
 ```
 
-Open `http://127.0.0.1:8765`, click the database badge → **🔌 Connect**.
+Open **`http://127.0.0.1:8765`** (not `localhost`; that address is redirected), click the database badge → **🔌 Connect**.
+
+> **Why does the Python lab load from `localhost`?** When the bridge serves the app, the Python lab runs on the `localhost`
+> origin while the SQL lab and the bridge API live on `127.0.0.1`. Same server, different origin: code you run in the Python lab
+> cannot read the API token or call the API. (You will see `localhost` in the address of that frame – that is intended.)
 
 * PostgreSQL: host, port (5432), database, user, password – or paste `postgresql://user:pass@host:5432/db`.
 * MySQL / phpMyAdmin: choose *MySQL / MariaDB* (phpMyAdmin is only the web front-end; use the MySQL server behind it,
@@ -240,8 +254,10 @@ Open `http://127.0.0.1:8765`, click the database badge → **🔌 Connect**.
   *Remote MySQL* allow-list, an SSH tunnel (`ssh -L 3307:localhost:3306 user@host`, then connect to `127.0.0.1:3307`), or
   export a backup and upload it.
 * **Modes** (header): 🔒 *Read-only* (default) · ↩️ *Try writes (rolled back)* – run `UPDATE`/`DELETE` and see the effect without
-  saving · ⚠️ *Commit changes* (asks for confirmation).
+  saving (on **MySQL, DDL such as `CREATE/DROP/ALTER` is refused** in this mode because MySQL commits it immediately) ·
+  ⚠️ *Commit changes* (asks for confirmation; never restored automatically on the next visit).
 * The *Live* (run-while-typing) switch is **off** for real databases – queries only run when you press Run.
+* *Use SSL* encrypts the connection but does **not** verify the server certificate.
 * Set `ANTHROPIC_API_KEY` in the environment before starting the bridge to use the AI schema helpers without pasting a key.
 
 > **Read-only mode is a guard, not a security boundary.** For data you care about, connect with a database user that only
@@ -302,7 +318,7 @@ practice-lab/
 │  │         flow-lab.js · pseudo-parser.js · pseudo-flow.js · pseudo-run.js · flow-exercises.js
 │  ├─ py/    lab_runner.py            the Python tracer / explainer that runs inside Pyodide
 │  ├─ vendor/sqljs/                   SQLite compiled to WebAssembly (MIT, license included)
-│  ├─ fonts/                          Baloo 2 + Plus Jakarta Sans (SIL OFL)
+│  ├─ fonts/                          Baloo 2 + Plus Jakarta Sans (SIL OFL, license text in OFL.txt)
 │  └─ img/favicon.svg
 ├─ bridge/                    OPTIONAL local helper for live PostgreSQL / MySQL
 │  ├─ server.py · requirements.txt · start.bat · start.sh
@@ -312,7 +328,7 @@ practice-lab/
 │  └─ e2e/     Playwright: all labs, imports, CSP, XSS probes, docking, phone layout
 ├─ docs/images/               screenshots used in this README
 ├─ .github/workflows/         ci.yml (tests) · pages.yml (deploy)
-└─ README.md · SECURITY.md · NOTICE.md · CHANGELOG.md · LICENSE
+└─ README.md · SECURITY.md · NOTICE.md · CHANGELOG.md · LICENSE · package.json · pytest.ini · requirements-dev.txt
 ```
 
 ---
@@ -359,16 +375,17 @@ stored functions). The import log (Output box) lists what was skipped. Tables, d
 **A loop stopped with "Endless loop".** The same check was reached again and again with identical values. Make something in
 the loop change what the condition looks at (for example `n = n - 1`).
 
-**Can I use it offline?** After the first visit the browser caches the files; Pyodide needs its first download. For a fully
-offline copy, self-host Pyodide (see [SECURITY.md](SECURITY.md)).
+**Can I use it offline?** There is no service worker, so this relies on the browser's normal cache: after one online visit the SQL
+and Flowchart labs usually reload offline, and the Python lab does too once Pyodide has been cached. It is not guaranteed; for a
+reliable offline copy self-host Pyodide (see [SECURITY.md](SECURITY.md)) and serve the folder locally.
 
 ---
 
 ## Known limits
 
 * Python: standard library only (no NumPy/pandas); steps are recorded for the first 600 executed lines; no multi-threading.
-* SQL sandbox: SQLite dialect; imports up to 60 MB (200 MB unpacked); results show the first 500 rows.
-* Flowchart lab: one-dimensional lists, no user-defined procedures yet, structured programs only (no `GOTO` / `BREAK`).
+* SQL sandbox: SQLite dialect; imports up to 60 MB (200 MB unpacked in total); results show the first 500 rows; `TEMP` tables and `PRAGMA`s do not survive a statement that changes data.
+* Flowchart lab: lists can be nested to read but only one level can be changed; no user-defined procedures yet; structured programs only (no `GOTO` / `BREAK`).
 * Live database connections need the local bridge (a browser rule).
 * Pyodide is loaded from a CDN (pinned version).
 

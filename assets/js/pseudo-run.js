@@ -15,14 +15,15 @@ export function fmtVal(v) {
 }
 export function fmtOut(v) { return typeof v === 'string' ? v : fmtVal(v); }
 const typeName = v => Array.isArray(v) ? 'a list' : typeof v === 'string' ? 'text' : typeof v === 'number' ? 'a number' : 'a true/false value';
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const near = (a, b) => a === b || Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));      // 0.1 + 0.2 = 0.3 is TRUE here
+const same = (a, b) => (typeof a === 'number' && typeof b === 'number' ? near(a, b) : JSON.stringify(a) === JSON.stringify(b));
 
 /** "3 4 5" or one value per line -> typed list (numbers where possible). */
 export function parseInputs(text) {
   const t = String(text || '').trim();
   if (!t) return [];
   const parts = t.includes('\n') ? t.split('\n').map(s => s.trim()).filter(s => s !== '') : t.split(/\s+/);
-  return parts.map(s => (s !== '' && !isNaN(Number(s)) ? Number(s) : s));
+  return parts.map(s => (/^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s));       // plain decimals only: Infinity, 0x1A, 1e3 stay text
 }
 
 /* ------------------------------------------------------------------ expression evaluation */
@@ -37,11 +38,22 @@ const FUNC_DOC = {
 function fail(msg, line) { throw new PseudoError(msg, line); }
 
 export function makeEnv() {
-  const m = new Map();
+  const m = new Map(), dirty = new Set();
   return {
     get: name => { const e = m.get(name.toLowerCase()); return e ? e.value : undefined; },
     has: name => m.has(name.toLowerCase()),
-    set(name, value) { const k = name.toLowerCase(); const e = m.get(k); if (e) e.value = value; else m.set(k, { name, value }); },
+    set(name, value) {
+      const k = name.toLowerCase(), e = m.get(k);
+      if (e) { if (!same(e.value, value) || typeof value === 'object') dirty.add(k); e.value = value; } else { m.set(k, { name, value }); dirty.add(k); }
+    },
+    touch(name) { dirty.add(name.toLowerCase()); },                               // a list was changed in place
+    takeDirty() { const out = [...dirty].map(k => m.get(k).name); dirty.clear(); return out; },
+    size() { let n = 0; for (const { value } of m.values()) n += Array.isArray(value) ? value.length + 1 : typeof value === 'string' ? Math.ceil(value.length / 8) + 1 : 1; return n; },
+    signature() {
+      let sg = '';
+      for (const { name, value } of m.values()) sg += name + '=' + (Array.isArray(value) ? `[${value.length}:${JSON.stringify(value.slice(0, 4))}${JSON.stringify(value.slice(-4))}]` : typeof value === 'string' ? value.length + ':' + value.slice(0, 40) : String(value)) + ';';
+      return sg;
+    },
     snapshot() { const o = {}; for (const { name, value } of m.values()) o[name] = JSON.parse(JSON.stringify(value)); return o; },
     names: () => [...m.values()].map(e => e.name),
   };
@@ -89,6 +101,7 @@ function binary(e, env, line) {
     case '<': case '>': case '≤': case '≥': {
       if (!((typeof a === 'number' && typeof b === 'number') || (typeof a === 'string' && typeof b === 'string')))
         fail(`Can't compare ${typeName(a)} ${fmtVal(a)} with ${typeName(b)} ${fmtVal(b)} using ${e.op}.`, line);
+      if (typeof a === 'number') return e.op === '<' ? a < b && !near(a, b) : e.op === '>' ? a > b && !near(a, b) : e.op === '≤' ? a < b || near(a, b) : a > b || near(a, b);
       return e.op === '<' ? a < b : e.op === '>' ? a > b : e.op === '≤' ? a <= b : a >= b;
     }
     case '+':
@@ -128,8 +141,12 @@ function call(e, env, line) {
     case 'UPPER': need(1); return fmtOut(args[0]).toUpperCase();
     case 'LOWER': need(1); return fmtOut(args[0]).toLowerCase();
     case 'STR': need(1); return fmtOut(args[0]);
-    case 'INT': { need(1); const n = Number(args[0]); if (typeof args[0] === 'boolean' || isNaN(n)) fail(`INT can't turn ${fmtVal(args[0])} into a number.`, line); return Math.trunc(n); }
-    case 'FLOAT': { need(1); const n = Number(args[0]); if (typeof args[0] === 'boolean' || isNaN(n)) fail(`FLOAT can't turn ${fmtVal(args[0])} into a number.`, line); return n; }
+    case 'INT': case 'FLOAT': {
+      need(1); const v = args[0];
+      const n = typeof v === 'number' ? v : typeof v === 'string' && /^\s*-?\d+(\.\d+)?\s*$/.test(v) ? Number(v) : NaN;
+      if (isNaN(n)) fail(`${e.name} can't turn ${fmtVal(v)} into a number.`, line);
+      return e.name === 'INT' ? Math.trunc(n) : n;
+    }
     case 'SUBSTR': {
       need(3); if (typeof args[0] !== 'string') fail('SUBSTR needs text as the first value.', line);
       return args[0].substr(num(args[1], 'SUBSTR', line), num(args[2], 'SUBSTR', line));
@@ -181,22 +198,23 @@ const withNotes = (text, notes) => notes.length ? text + notes.map(n => '\n• '
  *    step  = { node, line, kind, text, vars, changed, out, taken }
  *    error = { message, line, kind: 'runtime' | 'infinite' | 'toolong' | 'input' } | null
  */
-export function run(program, { inputs = [], maxSteps = 4000, maxExec = 100000 } = {}) {
+export function run(program, { inputs = [], maxSteps = 4000, maxExec = 60000, budgetMs = 2000 } = {}) {
   const env = makeEnv(), steps = [], visits = new Map();
-  let output = '', exec = 0, truncated = false, inputPos = 0, prevSnap = '{}', error = null;
+  let output = '', exec = 0, truncated = false, inputPos = 0, error = null;
 
+  const t0 = performance.now();
+  let snapCost = 0;
   function record(node, line, kind, text, extra = {}) {
     exec++;
-    if (exec > maxExec) { const e = new PseudoError('The algorithm ran for too many steps – it probably never stops.', line); e.kind = 'toolong'; throw e; }
-    const snap = env.snapshot(), snapJson = JSON.stringify(snap);
-    const changed = Object.keys(snap).filter(k => JSON.stringify(JSON.parse(prevSnap)[k]) !== JSON.stringify(snap[k]));
-    prevSnap = snapJson;
+    if (exec > maxExec || (exec % 128 === 0 && performance.now() - t0 > budgetMs)) { const e = new PseudoError('The algorithm ran for too many steps (or too long) – it probably never stops.', line); e.kind = 'toolong'; throw e; }
     if (kind === 'decision') {
-      const key = node + '|' + snapJson, c = (visits.get(key) || 0) + 1; visits.set(key, c);
+      const key = node + '|' + env.signature(), c = (visits.get(key) || 0) + 1; visits.set(key, c);
       if (c > 150) { const e = new PseudoError('This loop repeats forever: the same check is reached again and again with exactly the same values.', line); e.kind = 'infinite'; throw e; }
     }
-    if (steps.length < maxSteps) steps.push({ node, line, kind, text, vars: snap, changed, out: extra.out || '', taken: extra.taken || null });
-    else truncated = true;
+    const changed = env.takeDirty();
+    snapCost += env.size();
+    if (steps.length < maxSteps && snapCost < 3_000_000) steps.push({ node, line, kind, text, vars: env.snapshot(), changed, out: extra.out || '', taken: extra.taken || null });
+    else truncated = true;                                   // beyond this the run continues, but steps are no longer stored
   }
 
   function nextInput(line) {
@@ -204,14 +222,20 @@ export function run(program, { inputs = [], maxSteps = 4000, maxExec = 100000 } 
     return inputs[inputPos++];
   }
 
+  const MAX_LIST = 200000, MAX_TEXT = 1000000;
+  function checkSize(v, line) {
+    if ((Array.isArray(v) && v.length > MAX_LIST) || (typeof v === 'string' && v.length > MAX_TEXT)) fail('That value became too big for this playground (over 200 000 list items or 1 000 000 characters).', line);
+    return v;
+  }
   function assign(target, value, line) {
+    checkSize(value, line);
     if (target.t === 'var') { env.set(target.name, value); return; }
     const arr = env.get(target.base.name);
     if (arr === undefined) fail(`The list "${target.base.name}" doesn't exist yet.`, line);
     const i = ev(target.idx, env, line);
     if (!Array.isArray(arr)) fail(`${target.base.name} is not a list, so ${exprText(target)} can't be changed.`, line);
     if (!Number.isInteger(i) || i < 0 || i >= arr.length) fail(`Position ${fmtVal(i)} is outside the list ${target.base.name} (valid positions: 0 to ${arr.length - 1}).`, line);
-    arr[i] = value;
+    arr[i] = value; env.touch(target.base.name);
   }
 
   function cond(e, line) { return truthy(ev(e, env, line), line); }
@@ -250,7 +274,7 @@ export function run(program, { inputs = [], maxSteps = 4000, maxExec = 100000 } 
         if (!listE || !valE || s.call.args.length !== 2) fail('APPEND needs a list and a value:  APPEND(list, value)', s.line);
         const arr = ev(listE, env, s.line), v = ev(valE, env, s.line);
         if (!Array.isArray(arr) || listE.t !== 'var') fail('APPEND needs the name of a list as its first value.', s.line);
-        env.get(listE.name).push(v);
+        env.get(listE.name).push(v); env.touch(listE.name); checkSize(arr, s.line);
         record(fc.main, s.line, 'assign', `Adds \`${fmtVal(v)}\` to the END of the list \`${listE.name}\`.`);
         return;
       }
@@ -288,7 +312,7 @@ export function run(program, { inputs = [], maxSteps = 4000, maxExec = 100000 } 
         env.set(s.varName, from);
         record(fc.init, s.line, 'assign', `Starts the loop: sets the counter \`${s.varName}\` to \`${fmtVal(from)}\`.`);
         for (;;) {
-          const cur = env.get(s.varName), r = step > 0 ? cur <= to : cur >= to;
+          const cur = env.get(s.varName), r = step > 0 ? (cur < to || near(cur, to)) : (cur > to || near(cur, to));
           record(fc.cond, s.line, 'decision', `Loop check: is \`${s.varName}\` ${step > 0 ? '≤' : '≥'} \`${fmtVal(to)}\`? \`${fmtVal(cur)} ${step > 0 ? '≤' : '≥'} ${fmtVal(to)}\` is **${r ? 'TRUE' : 'FALSE'}** → ${r ? 'run the loop body (Yes).' : 'leave the loop (No).'}`, { taken: r ? 'Yes' : 'No' });
           if (!r) return;
           block(s.body);

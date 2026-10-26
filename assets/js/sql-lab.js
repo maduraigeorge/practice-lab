@@ -202,6 +202,7 @@ $('applyDDL').onclick = async () => {
 };
 const drop = $('drop');
 drop.onclick = () => $('imgFile').click();
+for (const z of [drop, $('fdrop')]) z.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); z.click(); } });
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('drag'); };
 drop.ondragleave = () => drop.classList.remove('drag');
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove('drag'); if (e.dataTransfer.files[0]) loadImage(e.dataTransfer.files[0]); };
@@ -327,7 +328,7 @@ function renderResult() {
 $('rtabs').onclick = e => { const b = e.target.closest('button'); if (b) { S.active = +b.dataset.i; renderResult(); } };
 $('csv').onclick = () => {
   const sets = S.result.sets.filter(s => s.columns.length), set = sets[S.active] || sets[0]; if (!set) return;
-  const cell = v => v === null ? '' : `"${String(v).replace(/"/g, '""')}"`;
+  const cell = v => v === null ? '' : `"${(typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? "'" : '') + String(v).replace(/"/g, '""')}"`;   // a leading ' stops Excel running cells as formulas
   const blob = new Blob([[set.columns.map(cell).join(','), ...set.rows.map(r => r.map(cell).join(','))].join('\n')], { type: 'text/csv' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'result.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
@@ -346,7 +347,8 @@ $('clearLog').onclick = () => { $('log').innerHTML = '<span class="empty">Messag
 const READ_RE = /^\s*(select|with|explain|show|values|table|pragma|describe|desc)\b/i;
 let debounceT = null;
 function schedule(ms = 800) { clearTimeout(debounceT); debounceT = setTimeout(() => { analyzeNow(); if ($('auto').checked && S.kind !== 'none' && isReadOnly()) run(false); }, ms); }
-function isReadOnly() { const t = splitStatements(currentSQL()); return t.length > 0 && t.every(s => READ_RE.test(maskSQL(s))); }
+const WRITE_RE = /\b(insert|update|delete|merge|replace|into|create|drop|alter|truncate|attach|detach|vacuum|reindex|grant|revoke|call|exec|copy|pragma)\b/i;
+function isReadOnly() { const t = splitStatements(currentSQL()); return t.length > 0 && t.every(st => { const m = maskSQL(st, true); return READ_RE.test(m) && !WRITE_RE.test(m); }); }
 function currentSQL() { const ta = $('sql'); return ta.selectionStart !== ta.selectionEnd ? ta.value.slice(ta.selectionStart, ta.selectionEnd) : ta.value; }
 function analyzeNow() { S.lastSteps = analyze(currentSQL()); renderSteps(S.lastSteps); refreshHighlights(); }
 
@@ -355,6 +357,7 @@ async function run(explicit, prefix = '') {
   if (!sql.trim()) return;
   if (S.kind === 'none') { if (explicit) openDlg(); return; }
   if (explicit && S.kind === 'live' && $('mode').value === 'commit' && !isReadOnly() && !confirm('Commit mode: this will PERMANENTLY change the database. Run it?')) return;
+  const ta = $('sql'), lineOffset = ta.selectionStart !== ta.selectionEnd ? ta.value.slice(0, ta.selectionStart).split('\n').length - 1 : 0;   // a selection is run on its own
   const id = ++S.runId; setStatus('Running…', 'busy'); $('bandErr').style.display = 'none';
   const r = await execSQL(sql); if (id !== S.runId) return;
   S.result = r; S.active = 0;
@@ -371,7 +374,7 @@ async function run(explicit, prefix = '') {
   } else {
     const e = r.error; setStatus('✗ Error', 'err'); $('tabOut').classList.add('dot');
     log('err', 'Error', e.message, e.hint || friendlyHint(e.message), !explicit);
-    markError(e, sql, prefix.length);
+    markError(e, sql, lineOffset);
     if (explicit && matchMedia('(max-width:900px)').matches) setTab('output');
   }
 }
@@ -390,7 +393,7 @@ function markError(e, sql, offset) {
   let line = null;
   if (e.position) line = sql.slice(0, e.position).split('\n').length;
   else { const m = /line (\d+)/i.exec(e.message); if (m) line = +m[1]; }
-  if (line) { line -= sql.slice(0, 0).split('\n').length - 1; const b = $('bandErr'); b.style.display = 'block'; b.dataset.line = line; positionBands(); }
+  if (line) { line += offset; const b = $('bandErr'); b.style.display = 'block'; b.dataset.line = line; positionBands(); }
 }
 async function refreshSchema() {
   if (S.kind === 'live') { const r = await api('schema', { token: S.token }); if (r.ok) S.schema = r.schema; }
@@ -517,7 +520,8 @@ $('sql').addEventListener('select', () => {}); document.addEventListener('select
 
 /* autocomplete */
 let charW = 8.4;
-const ac = { items: [], i: 0, start: 0, open: false };
+const ac = { items: [], i: 0, start: 0, open: false, nav: false };
+let escTab = false;
 function acHide() { ac.open = false; $('ac').style.display = 'none'; }
 function aliasMap(text) {
   const map = {}, re = /\b(?:from|join)\s+([\w."`]+)(?:\s+(?:as\s+)?(?!on\b|where\b|join\b|inner\b|left\b|right\b|full\b|cross\b|group\b|order\b|limit\b|having\b|union\b|using\b)(\w+))?/gi; let m;
@@ -543,7 +547,7 @@ function acUpdate() {
   const seen = new Set(), lw = word.toLowerCase();
   const items = pool.filter(([n]) => n.toLowerCase().startsWith(lw) && n !== word && !seen.has(n) && seen.add(n)).slice(0, 30);
   if (!items.length) return acHide();
-  Object.assign(ac, { items, i: 0, start: pos - word.length, open: true });
+  Object.assign(ac, { items, i: 0, start: pos - word.length, open: true, nav: false });
   const lines = before.split('\n'), row = lines.length - 1, col = lines[row].length - word.length, el = $('ac');
   el.style.left = Math.max(48, Math.min(46 + 10 + col * charW - ta.scrollLeft, ta.clientWidth - 120)) + 'px';
   el.style.top = (PAD + (row + 1) * LH - ta.scrollTop) + 'px'; acRender(); el.style.display = 'block';
@@ -562,21 +566,26 @@ $('sql').addEventListener('keydown', e => {
   const ta = e.target;
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); acHide(); return run(true); }
   if (ac.open) {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); ac.i = (ac.i + (e.key === 'ArrowDown' ? 1 : -1) + ac.items.length) % ac.items.length; return acRender(); }
-    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); return acAccept(); }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); ac.nav = true; ac.i = (ac.i + (e.key === 'ArrowDown' ? 1 : -1) + ac.items.length) % ac.items.length; return acRender(); }
+    if (e.key === 'Tab' || (e.key === 'Enter' && ac.nav)) { e.preventDefault(); return acAccept(); }
     if (e.key === 'Escape') { e.preventDefault(); return acHide(); }
   }
-  if (e.key === 'Tab') { e.preventDefault(); ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end'); onEdit(); }
+  const leave = escTab; if (e.key !== 'Tab' && e.key !== 'Shift') escTab = false;
+  if (e.key === 'Escape') { escTab = true; return; }                                  // Esc, then Tab, moves focus out of the editor
+  if (e.key === 'Tab' && !e.shiftKey && !leave) { e.preventDefault(); ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end'); onEdit(); }
   else if (e.key === 'Enter') {
     e.preventDefault(); const pos = ta.selectionStart, line = ta.value.slice(0, pos).split('\n').pop();
     ta.setRangeText('\n' + line.match(/^\s*/)[0], pos, ta.selectionEnd, 'end'); onEdit();
   }
 });
 $('fmt').onclick = () => {
-  const ta = $('sql'); let s = ta.value;
-  s = s.replace(/\s+/g, ' ').replace(/\b(FROM|WHERE|GROUP BY|HAVING|ORDER BY|LIMIT|UNION ALL|UNION|(?:INNER |LEFT |RIGHT |FULL |CROSS )?(?:OUTER )?JOIN)\b/gi, '\n$1').replace(/\s*;\s*/g, ';\n').trim();
-  s = s.replace(/\b(select|from|where|group by|having|order by|limit|join|inner join|left join|right join|full join|cross join|on|and|or|as|in|not|null|is|like|between|distinct|asc|desc|union|all)\b(?=(?:[^']*'[^']*')*[^']*$)/gi, w => w.toUpperCase());
-  ta.value = s; onEdit();
+  const ta = $('sql');
+  const parts = ta.value.split(/('(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|--[^\n]*|\/\*[\s\S]*?\*\/)/);       // odd entries are strings / comments: left exactly as typed
+  const KW_RE = /\b(select|from|where|group by|having|order by|limit|offset|join|inner join|left join|right join|full join|cross join|on|and|or|as|in|not|null|is|like|between|distinct|asc|desc|union|all|case|when|then|else|end)\b/gi;
+  const CLAUSE_RE = /\b(FROM|WHERE|GROUP BY|HAVING|ORDER BY|LIMIT|UNION ALL|UNION|(?:INNER |LEFT |RIGHT |FULL |CROSS )?(?:OUTER )?JOIN)\b/g;
+  let out = parts.map((p, i) => i % 2 ? (p.startsWith('--') ? p + '\n' : p) : p.replace(/\s+/g, ' ').replace(KW_RE, w => w.toUpperCase()).replace(CLAUSE_RE, '\n$1').replace(/\s*;\s*/g, ';\n').replace(i > 0 && parts[i - 1].startsWith('--') ? /^ / : /^(?!)/, '')).join('');
+  out = out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '').trim();
+  ta.value = out; onEdit();
 };
 
 /* examples + tabs + boot */
@@ -592,14 +601,16 @@ initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visu
   if (t === 'visual') { layoutEr(); drawLines(); }
 });
 window.addEventListener('resize', () => { positionBands(); });
-dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+let downOnBackdrop = false;
+dlg.addEventListener('mousedown', e => { downOnBackdrop = e.target === dlg; });
+dlg.addEventListener('click', e => { if (e.target === dlg && downOnBackdrop) dlg.close(); });
 
 (async function boot() {
   $('sql').value = store.get('sqlLab.sql', 'SELECT * FROM customers;');
   $('auto').checked = store.get('sqlLab.auto', '1') === '1';
-  $('mode').value = store.get('sqlLab.mode', 'readonly');
+  $('mode').value = store.get('sqlLab.mode', 'readonly') === 'rollback' ? 'rollback' : 'readonly';        // a real connection never starts in commit mode
   ['host', 'port', 'db', 'user'].forEach(k => { const v = store.get('sqlLab.f-' + k, ''); if (v) $('f-' + k).value = v; });
-  const t = store.get('sqlLab.type', 'postgres'); document.querySelector(`input[name=dbt][value=${t}]`).checked = true; $('f-port').placeholder = t === 'mysql' ? '3306' : '5432';
+  const savedType = store.get('sqlLab.type', 'postgres'), t = savedType === 'mysql' ? 'mysql' : 'postgres'; document.querySelector(`input[name=dbt][value=${t}]`).checked = true; $('f-port').placeholder = t === 'mysql' ? '3306' : '5432';
   updateEditor(); charW = measureChar($('sql')); fillExamples(); analyzeNow();
   await detectBridge(); checkBridge(); setConn();
   try {

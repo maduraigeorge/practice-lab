@@ -6,6 +6,8 @@
   const t = await import('./shims/nodetest.js');
   await import('./pseudo.test.mjs');
   await import('./sql.test.mjs');
+  await import('./sql-import.test.mjs');
+  await import('./pseudo-hardening.test.mjs');
   const r = await t.done();
   window.__results = r;
   document.getElementById('out').textContent = r.map(x => (x.ok ? 'PASS ' : 'FAIL ') + x.name + (x.ok ? '' : ' — ' + x.error)).join('\n');

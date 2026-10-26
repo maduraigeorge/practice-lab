@@ -69,7 +69,7 @@ export function mountLabNav(current) {
     if (id === current) { a.className = 'on'; a.setAttribute('aria-current', 'page'); }
     a.addEventListener('click', e => {
       if (id === current) return e.preventDefault();
-      if (embedded) { e.preventDefault(); window.parent.postMessage({ type: 'practice-lab:nav', lab: id }, location.origin); }
+      if (embedded) { e.preventDefault(); window.parent.postMessage({ type: 'practice-lab:nav', lab: id }, '*'); }
     });
     nav.appendChild(a);
   }
@@ -77,7 +77,7 @@ export function mountLabNav(current) {
     if (!e.altKey || !/^[1-3]$/.test(e.key)) return;
     const id = LABS[+e.key - 1][0]; if (id === current) return;
     e.preventDefault();
-    if (embedded) window.parent.postMessage({ type: 'practice-lab:nav', lab: id }, location.origin); else location.href = `${id}-lab.html`;
+    if (embedded) window.parent.postMessage({ type: 'practice-lab:nav', lab: id }, '*'); else location.href = `${id}-lab.html`;
   });
 }
 

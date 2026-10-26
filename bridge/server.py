@@ -191,7 +191,7 @@ def api_connect(p):
             port = int(p.get('port') or 3306)
             kw = {'ssl': {'fake_flag_to_enable_tls': True}, 'ssl_verify_cert': False} if ssl else {}
             conn = pymysql.connect(host=host, port=port, user=user, password=password, database=dbname,
-                                   connect_timeout=8, charset='utf8mb4', autocommit=False,
+                                   connect_timeout=8, read_timeout=STATEMENT_TIMEOUT_MS // 1000 + 15, write_timeout=30, charset='utf8mb4', autocommit=False,
                                    client_flag=MYCLIENT.MULTI_STATEMENTS, **kw)
             cur = conn.cursor()
             cur.execute('SELECT VERSION()')
@@ -228,10 +228,26 @@ def get_session(p):
     return s
 
 
+def evict(p):
+    with SESSIONS_LOCK:
+        s = SESSIONS.pop(p.get('token'), None)
+    if s:
+        try:
+            s.conn.close()
+        except Exception:
+            pass
+
+
 def api_schema(p):
     s = get_session(p)
     with s.lock:
-        return {'schema': pg_schema(s.conn) if s.kind == 'postgres' else my_schema(s.conn)}
+        try:
+            return {'schema': pg_schema(s.conn) if s.kind == 'postgres' else my_schema(s.conn)}
+        except Exception as e:
+            if _is_dead(e):
+                evict(p)
+                raise ApiError('The connection to the database was lost. Please connect again.', reconnect=True)
+            raise ApiError(describe_error(e)['message'])
 
 
 def api_disconnect(p):
@@ -246,6 +262,11 @@ def api_disconnect(p):
 
 
 # ---------------------------------------------------------------- queries
+
+def _is_dead(e):
+    names = {c.__name__ for c in type(e).__mro__}
+    return bool(names & {'OperationalError', 'InterfaceError', 'AdminShutdown', 'ConnectionTimeout'}) and not getattr(e, 'diag', None) or 'closed' in str(e).lower() and 'connection' in str(e).lower()
+
 
 def describe_error(e):
     msg, pos, hint = str(e), None, None
@@ -275,49 +296,70 @@ def collect(cur, limit):
 
 
 _TX_CONTROL = re.compile(
-    r'^\s*(commit|end|abort|begin|start\s+transaction|set\s+(session|local)?\s*(characteristics|transaction|default_transaction_\w+|transaction_read_only)'
-    r'|set\s+transaction_read_only|reset\s+(all|transaction_read_only|default_transaction_read_only)|savepoint|release|rollback\s+to)\b', re.I)
+    r'^\s*(commit|end|abort|begin|start\s+transaction|set\s+(session|local|global)?\s*(characteristics|transaction|default_transaction_\w+|transaction_read_only)'
+    r'|set\s+transaction_read_only|reset\s+(all|transaction_read_only|default_transaction_read_only)|savepoint|release|rollback\s+to'
+    r'|prepare\s+transaction|commit\s+prepared|rollback\s+prepared)\b', re.I)
+_RO_SWITCH = re.compile(r'\b(transaction_read_only|tx_read_only|default_transaction_read_only|set_config)\b', re.I)
+_MYSQL_IMPLICIT_COMMIT = re.compile(r'^\s*(create|drop|alter|truncate|rename|lock|unlock|grant|revoke|analyze|optimize|repair|load\s+data)\b', re.I)
 
 
-def _mask_sql(sql):
-    """Blank out comments and quoted text so statements can be split on ';' safely."""
+def _mask_sql(sql, kind='postgres'):
+    """Blank out comments and quoted text so statements can be split on ';' safely.
+    MySQL: backslash escapes inside quotes, and /*! ... */ executable comments count as code.
+    PostgreSQL: E'...' strings use backslash escapes, $tag$ ... $tag$ bodies are blanked."""
     out, i, n = [], 0, len(sql)
+    my = kind == 'mysql'
     while i < n:
         c = sql[i]
-        if sql.startswith('--', i):
+        if sql.startswith('--', i) or (my and c == '#'):
             j = sql.find('\n', i); j = n if j < 0 else j
             out.append(' ' * (j - i)); i = j
         elif sql.startswith('/*', i):
             j = sql.find('*/', i + 2); j = n if j < 0 else j + 2
-            out.append(' ' * (j - i)); i = j
-        elif c in ("'", '"', '`') or (c == '$' and re.match(r'\$\w*\$', sql[i:])):
-            if c == '$':
-                tag = re.match(r'\$\w*\$', sql[i:]).group(0)
-                j = sql.find(tag, i + len(tag)); j = n if j < 0 else j + len(tag)
+            if my and sql.startswith('/*!', i):
+                body = sql[i + 3:j - 2] if j - i >= 5 else ''                                           # executable comment: its content RUNS
+                body = re.sub(r'^\d{5,6}', lambda m: ' ' * len(m.group()), body)                       # optional version number
+                out.append(' ' * 3 + body + ' ' * (j - i - 3 - len(body)))
             else:
-                j = i + 1
-                while j < n:
-                    if sql[j] == c:
-                        if j + 1 < n and sql[j + 1] == c:
-                            j += 2; continue
-                        break
-                    j += 1
-                j = min(j + 1, n)
+                out.append(' ' * (j - i))
+            i = j
+        elif c == '$' and re.match(r'\$\w*\$', sql[i:]) and not my:
+            tag = re.match(r'\$\w*\$', sql[i:]).group(0)
+            j = sql.find(tag, i + len(tag)); j = n if j < 0 else j + len(tag)
+            out.append(' ' * (j - i)); i = j
+        elif c in ("'", '"', '`'):
+            backslash = my or (c == "'" and i > 0 and sql[i - 1] in 'eE' and (i < 2 or not (sql[i - 2].isalnum() or sql[i - 2] == '_')))
+            j = i + 1
+            while j < n:
+                if backslash and sql[j] == '\\':
+                    j += 2; continue
+                if sql[j] == c:
+                    if j + 1 < n and sql[j + 1] == c:
+                        j += 2; continue
+                    break
+                j += 1
+            j = min(j + 1, n)
             out.append(' ' * (j - i)); i = j
         else:
             out.append(c); i += 1
     return ''.join(out)
 
 
-def check_guard(sql, mode):
-    """Read-only / try-it modes must not be able to leave their transaction. This is a convenience guard, NOT a
-    security boundary - for real data connect with a database user that only has SELECT rights."""
+def check_guard(sql, mode, kind='postgres'):
+    """Read-only / try-it modes must not be able to leave their transaction. This is a best-effort convenience guard,
+    NOT a security boundary - for real data connect with a database user that only has SELECT rights."""
     if mode == 'commit':
         return
-    for st in _mask_sql(sql).split(';'):
+    masked = _mask_sql(sql, kind)
+    if _RO_SWITCH.search(masked):
+        raise ApiError('Changing the transaction mode or calling set_config() is not allowed in this mode. Switch to "Commit changes" if you really need it.')
+    for st in masked.split(';'):
         if _TX_CONTROL.match(st):
             raise ApiError('Transaction-control statements (COMMIT, BEGIN, SET TRANSACTION ...) are not allowed in this mode. '
                            'Switch to "Commit changes" if you really need them.')
+        if mode == 'rollback' and kind == 'mysql' and _MYSQL_IMPLICIT_COMMIT.match(st):
+            raise ApiError('MySQL commits CREATE / DROP / ALTER / TRUNCATE immediately - they cannot be rolled back, so "Try writes" refuses them. '
+                           'Use "Commit changes" if you really mean it.')
 
 
 def api_query(p):
@@ -330,7 +372,7 @@ def api_query(p):
         raise ApiError('Nothing to run.')
     if len(sql) > 200000:
         raise ApiError('That query is too long.')
-    check_guard(sql, mode)
+    check_guard(sql, mode, s.kind)
     with s.lock:
         conn, t0 = s.conn, time.time()
         s.notices.clear()
@@ -350,11 +392,13 @@ def api_query(p):
             else:
                 conn.rollback()
         except Exception as e:
+            err = describe_error(e)
             try:
                 conn.rollback()
             except Exception:
-                pass
-            return {'ok': False, 'error': describe_error(e)}
+                evict(p)
+                return {'ok': False, 'error': {'message': 'The connection to the database was lost. Please connect again.'}, 'reconnect': True}
+            return {'ok': False, 'error': err}
         return {'ok': True, 'sets': sets, 'ms': round((time.time() - t0) * 1000, 1),
                 'notices': list(s.notices), 'committed': mode == 'commit',
                 'rolledBack': mode == 'rollback'}
@@ -418,9 +462,10 @@ ROUTES = {'connect': api_connect, 'query': api_query, 'schema': api_schema,
 # ---------------------------------------------------------------- http
 
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; "
-       "connect-src 'self' https://api.anthropic.com; worker-src 'self'; frame-src 'self'; frame-ancestors 'self'; "
+       "connect-src 'self' https://api.anthropic.com; worker-src 'self'; frame-src 'self' http://localhost:*; frame-ancestors 'self' http://127.0.0.1:* http://localhost:*; "
        "base-uri 'none'; form-action 'none'; object-src 'none'")
-HTML_HEADERS = {'Content-Security-Policy': CSP, 'X-Frame-Options': 'SAMEORIGIN', 'Cross-Origin-Opener-Policy': 'same-origin'}
+CSP_TOP = CSP.replace("frame-ancestors 'self' http://127.0.0.1:* http://localhost:*", "frame-ancestors 'none'")     # the shell itself must never be framed
+HTML_HEADERS = {'Content-Security-Policy': CSP, 'Cross-Origin-Opener-Policy': 'same-origin'}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -438,6 +483,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def _host_ok(self):
         return self.headers.get('Host', '').lower() in self._allowed_hosts()
+
+    def _api_host_ok(self):
+        # The API answers on 127.0.0.1 ONLY. The Python lab is served from the 'localhost' origin (same server, different
+        # origin), so code you run there cannot read the token or call the API - the browser's same-origin policy blocks it.
+        return self.headers.get('Host', '').lower() == f'127.0.0.1:{self.server.server_address[1]}'
 
     def _origin_ok(self):
         origin = self.headers.get('Origin')
@@ -487,7 +537,12 @@ class Handler(BaseHTTPRequestHandler):
         ctype = mimetypes.guess_type(target.name)[0] or 'application/octet-stream'
         if ctype.startswith('text/') or ctype in ('application/json',):
             ctype += '; charset=utf-8'
-        self._send(200, data, ctype, HTML_HEADERS if target.suffix.lower() == '.html' else None)
+        headers = None
+        if target.suffix.lower() == '.html':
+            headers = dict(HTML_HEADERS)
+            if target.name == 'index.html':
+                headers['Content-Security-Policy'] = CSP_TOP
+        self._send(200, data, ctype, headers)
 
     # -- verbs ----------------------------------------------------------------------------------
     def do_HEAD(self):
@@ -498,7 +553,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(403, {'error': 'bad host'})
         path = self.path.split('?')[0].split('#')[0]
         if path == '/api/session':
-            if not self._origin_ok():
+            if not self._api_host_ok() or not self._origin_ok():
                 return self._send(403, {'error': 'cross-site request refused'})
             return self._send(200, {'token': TOKEN, 'postgres': psycopg is not None, 'mysql': pymysql is not None,
                                     'hasKey': bool(os.environ.get('ANTHROPIC_API_KEY'))})
@@ -506,10 +561,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {'error': 'not found'})
         if path == '/favicon.ico':
             return self._send(204, b'', 'image/x-icon')
+        if not self._api_host_ok() and path in ('/', '/index.html', '/labs/sql-lab.html', '/labs/flow-lab.html'):
+            port = self.server.server_address[1]       # these pages belong on the 127.0.0.1 origin (the Python lab lives on 'localhost')
+            return self._send(302, b'', 'text/plain', {'Location': f'http://127.0.0.1:{port}{path}'})
         self._static(path)
 
     def do_POST(self):
-        if not self._host_ok() or not self._origin_ok():
+        try:                                             # always consume the body: unread bytes would be parsed as the NEXT request
+            n = int(self.headers.get('Content-Length', '0'))
+        except ValueError:
+            n = -1
+        if n < 0 or n > MAX_BODY:
+            self.close_connection = True
+            return self._send(413, {'ok': False, 'error': {'message': 'Request too large.'}}, extra={'Connection': 'close'})
+        raw = self.rfile.read(n) if n else b''
+        if not self._host_ok() or not self._api_host_ok() or not self._origin_ok():
             return self._send(403, {'ok': False, 'error': {'message': 'Request refused.'}})
         if not hmac.compare_digest(self.headers.get('X-Bridge-Token', ''), TOKEN):
             return self._send(403, {'ok': False, 'error': {'message': 'Bad bridge token - reload the page.'}})
@@ -520,10 +586,7 @@ class Handler(BaseHTTPRequestHandler):
         if not fn:
             return self._send(404, {'ok': False, 'error': {'message': 'unknown endpoint'}})
         try:
-            n = int(self.headers.get('Content-Length', '0'))
-            if n < 0 or n > MAX_BODY:
-                raise ApiError('Request too large.')
-            payload = json.loads(self.rfile.read(n) or b'{}')
+            payload = json.loads(raw or b'{}')
             if not isinstance(payload, dict):
                 raise ApiError('Bad request.')
             out = fn(payload)

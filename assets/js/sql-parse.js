@@ -5,13 +5,17 @@
 export const KW = new Set('select from where group by having order limit offset join inner left right full outer cross natural on as and or not in is null like ilike between exists case when then else end union all intersect except distinct insert into values update set delete create table drop alter add column primary key foreign references default unique index view with recursive asc desc using returning if true false cast over partition rows range explain analyze begin commit rollback'.split(' '));
 export const FUNCS = 'count sum avg min max round coalesce nullif lower upper length substr substring concat trim replace now current_date current_timestamp date extract cast abs ceil floor row_number rank dense_rank lag lead string_agg group_concat ifnull strftime'.split(' ');
 
-export function maskSQL(s) {
+export function maskSQL(s, keepParens = false) {
   let out = '', i = 0, depth = 0;
   const blank = (a, b, ch = ' ') => { let r = ''; for (let k = a; k < b; k++) r += s[k] === '\n' ? '\n' : ch; return r; };
   while (i < s.length) {
     const c = s[i], n = s[i + 1];
     if (c === '-' && n === '-') { let e = s.indexOf('\n', i); if (e < 0) e = s.length; out += blank(i, e); i = e; continue; }
     if (c === '/' && n === '*') { let e = s.indexOf('*/', i + 2); e = e < 0 ? s.length : e + 2; out += blank(i, e); i = e; continue; }
+    if (c === '$') {                                    // PostgreSQL dollar quoting: $$ ... $$ and $tag$ ... $tag$ (function bodies)
+      const m = /^\$[A-Za-z_]*\$/.exec(s.slice(i, i + 64));
+      if (m) { let e = s.indexOf(m[0], i + m[0].length); e = e < 0 ? s.length : e + m[0].length; out += blank(i, e); i = e; continue; }
+    }
     if (c === "'" || c === '"' || c === '`') {
       let j = i + 1;
       while (j < s.length) { if (s[j] === c) { if (s[j + 1] === c) { j += 2; continue; } break; } j++; }
@@ -20,7 +24,7 @@ export function maskSQL(s) {
     }
     if (c === '(') { depth++; out += c; i++; continue; }
     if (c === ')') { depth = Math.max(0, depth - 1); out += c; i++; continue; }
-    out += depth > 0 ? (c === '\n' ? '\n' : ' ') : c; i++;
+    out += depth > 0 && !keepParens ? (c === '\n' ? '\n' : ' ') : c; i++;
   }
   return out;
 }

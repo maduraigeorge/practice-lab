@@ -1,11 +1,12 @@
 /* Main-thread wrapper around sqlite-worker.js.
- * - call(type, payload, {timeout}) returns a promise for the worker's result.
- * - If a call exceeds its timeout the worker is terminated and restarted from the last snapshot, so a runaway query
+ * - call(type, payload, {timeout}) returns a promise for the worker's result. Calls run one after another, and a call's timer
+ *   starts only when IT starts running (waiting in the queue never counts against it).
+ * - If a running call exceeds its timeout the worker is terminated and restarted from the last snapshot, so a runaway query
  *   (for example an endless recursive CTE) can never freeze the page or lose the database. */
 export class SqliteTimeout extends Error {}
 
 export class SqliteClient {
-  constructor() { this.snapshot = null; this.nextId = 1; this.pending = new Map(); this.restoring = null; this._start(); }
+  constructor() { this.snapshot = null; this.nextId = 1; this.pending = new Map(); this.restoring = null; this.chain = Promise.resolve(); this._start(); }
 
   _start() {
     this.worker = new Worker(new URL('./sqlite-worker.js', import.meta.url));
@@ -39,10 +40,15 @@ export class SqliteClient {
     }
   }
 
-  async call(type, payload = {}, { timeout = 15000 } = {}) {
-    if (this.restoring) await this.restoring;
-    const transfer = [];
-    if (type === 'open' && payload.bytes) { this.snapshot = payload.bytes.slice(); transfer.push(payload.bytes.buffer); }
-    return this._send(type, payload, timeout, transfer);
+  call(type, payload = {}, { timeout = 15000 } = {}) {
+    const run = async () => {
+      if (this.restoring) await this.restoring;
+      const transfer = [];
+      if (type === 'open' && payload.bytes) { this.snapshot = payload.bytes.slice(); transfer.push(payload.bytes.buffer); }
+      return this._send(type, payload, timeout, transfer);
+    };
+    const result = this.chain.then(run);
+    this.chain = result.catch(() => {});          // a failed call must not block the ones behind it
+    return result;
   }
 }

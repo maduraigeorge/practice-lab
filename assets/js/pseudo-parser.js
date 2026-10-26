@@ -18,7 +18,6 @@ export class PseudoError extends Error {
 }
 
 /* ------------------------------------------------------------------ tokenizer */
-const OPS3 = ['<->'];
 const OPS2 = ['<-', '<=', '>=', '==', '!=', '<>', ':=', '**', '||', '&&'];
 const OPS1 = '+-*/%^=<>()[],&!:←≤≥≠';
 
@@ -38,8 +37,8 @@ export function tokenizeLine(text, line) {
       const m = /^(\d+(\.\d+)?|\.\d+)/.exec(text.slice(i));
       toks.push({ k: 'num', v: parseFloat(m[0]), line }); i += m[0].length; continue;
     }
-    if (/[A-Za-z_]/.test(c)) {
-      const m = /^[A-Za-z_][A-Za-z_0-9]*/.exec(text.slice(i));
+    if (/[\p{L}_]/u.test(c)) {                                   // letters of any language: café, ñ, नाम ...
+      const m = /^[\p{L}_][\p{L}\p{N}_]*/u.exec(text.slice(i));
       toks.push({ k: 'id', v: m[0], u: m[0].toUpperCase(), line }); i += m[0].length; continue;
     }
     const two = text.slice(i, i + 2);
@@ -78,10 +77,12 @@ export function parse(source) {
     const peek = () => toks[i];
     const isOp = v => toks[i] && toks[i].k === 'op' && toks[i].v === v;
     const isKw = u => toks[i] && toks[i].k === 'id' && toks[i].u === u;
+    let depth = 0;
+    const nest = f => { if (++depth > 100) err('This expression is nested too deeply.', line); try { return f(); } finally { depth--; } };
     const expect = (v, why) => { if (!isOp(v)) err(why || `Expected "${v}".`, line); i++; };
-    function or() { let l = and(); while (isKw('OR') || isOp('||')) { i++; l = { t: 'bin', op: 'OR', l, r: and() }; } return l; }
+    function or() { return nest(() => { let l = and(); while (isKw('OR') || isOp('||')) { i++; l = { t: 'bin', op: 'OR', l, r: and() }; } return l; }); }
     function and() { let l = not(); while (isKw('AND') || isOp('&&')) { i++; l = { t: 'bin', op: 'AND', l, r: not() }; } return l; }
-    function not() { if (isKw('NOT') || isOp('!')) { i++; return { t: 'un', op: 'NOT', e: not() }; } return cmp(); }
+    function not() { return nest(() => { if (isKw('NOT') || isOp('!')) { i++; return { t: 'un', op: 'NOT', e: not() }; } return cmp(); }); }
     function cmp() {
       let l = add();
       for (;;) {
@@ -101,7 +102,7 @@ export function parse(source) {
         else return l;
       }
     }
-    function unary() { if (isOp('-')) { i++; return { t: 'un', op: '-', e: unary() }; } if (isOp('+')) { i++; return unary(); } return power(); }
+    function unary() { return nest(() => { if (isOp('-')) { i++; return { t: 'un', op: '-', e: unary() }; } if (isOp('+')) { i++; return unary(); } return power(); }); }
     function power() { const b = postfix(); if (isOp('^') || isOp('**')) { i++; return { t: 'bin', op: '^', l: b, r: unary() }; } return b; }
     function postfix() {
       let e = primary();
@@ -187,6 +188,7 @@ export function parse(source) {
       for (;;) {
         const e = ep.or();
         if (e.t !== 'var' && e.t !== 'index') err(`${f} stores the value in a variable – "${ep.peek() ? ep.peek().v : 'this'}" is not a variable name.`, line);
+        if (e.t === 'index' && e.base.t !== 'var') err('Only one level of [ ] can be changed, e.g. a[i]. For a list of lists, use a helper variable.', line);
         targets.push(e);
         if (ep.isOp(',')) ep.advance(); else break;
       }
@@ -282,6 +284,7 @@ export function parse(source) {
     if (opAt > 0 && toks[0].k === 'id' && !RESERVED.has(toks[0].u)) {
       const target = parseExpr(toks.slice(0, opAt), line);
       if (target.t !== 'var' && target.t !== 'index') err('The left side of = must be a variable (or a list item like a[i]).', line);
+      if (target.t === 'index' && target.base.t !== 'var') err('Only one level of [ ] can be changed, e.g. a[i] = 5. For a list of lists, copy the inner list into a variable first.', line);
       if (opAt === toks.length - 1) err('Write a value after the = sign.', line);
       p++; return node({ type: 'assign', target, expr: parseExpr(toks.slice(opAt + 1), line) });
     }

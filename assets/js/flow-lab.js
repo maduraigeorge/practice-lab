@@ -22,14 +22,21 @@ function recompute() {
   if (!src.trim()) { reset(); setStatus('Write some pseudocode', ''); return; }
   let program;
   try { program = parse(src); } catch (e) {
-    if (!(e instanceof PseudoError)) throw e;
+    if (!(e instanceof PseudoError)) { console.error(e); e = new PseudoError('Something unexpected went wrong while reading this pseudocode (is it extremely large or deeply nested?).', null); }
     S.err = { message: e.message, line: e.line, kind: 'syntax' };
     $('chart').classList.add('stale');
     renderOutput(); markError(); setStatus(`✗ Syntax error${e.line ? ' on line ' + e.line : ''}`, 'err'); $('tabOut').classList.add('dot');
     return;
   }
   $('chart').classList.remove('stale');
-  const chart = buildChart(program), res = run(program, { inputs: parseInputs($('inputs').value) });
+  let chart, res;
+  try { chart = buildChart(program); res = run(program, { inputs: parseInputs($('inputs').value) }); }
+  catch (e) {                                              // never leave the panes half-updated
+    console.error(e);
+    S.err = { message: 'Something unexpected went wrong while running this pseudocode: ' + (e && e.message || e), line: null, kind: 'runtime' };
+    renderOutput(); setStatus('✗ Unexpected error', 'err'); $('tabOut').classList.add('dot');
+    return;
+  }
   Object.assign(S, { program, chart, result: res, steps: res.steps });
   S.nodeText = new Map(chart.nodes.map(n => [n.id, n.text]));
   S.stepEdges = res.steps.map((st, i) => (i === 0 ? [] : pathEdges(chart, res.steps[i - 1].node, st.node, res.steps[i - 1].taken)));
@@ -278,7 +285,8 @@ $('code').addEventListener('scroll', () => { syncScroll(); acHide(); });
 $('inputs').addEventListener('input', onEdit);
 
 /* autocomplete */
-const ac = { items: [], i: 0, start: 0, open: false };
+const ac = { items: [], i: 0, start: 0, open: false, nav: false };
+let escTab = false;         // Esc, then Tab, moves focus out of the editor (Tab otherwise indents)
 function acHide() { ac.open = false; $('ac').style.display = 'none'; }
 function acUpdate() {
   const ta = $('code'), pos = ta.selectionStart; if (ta.selectionEnd !== pos) return acHide();
@@ -289,7 +297,7 @@ function acUpdate() {
   const seen = new Set(), lw = word.toLowerCase();
   const items = pool.filter(([n]) => !seen.has(n) && seen.add(n) && n.toLowerCase() !== lw && n.toLowerCase().startsWith(lw)).slice(0, 24);
   if (!items.length) return acHide();
-  Object.assign(ac, { items, i: 0, start: pos - word.length, open: true });
+  Object.assign(ac, { items, i: 0, start: pos - word.length, open: true, nav: false });
   const lines = before.split('\n'), row = lines.length - 1, col = lines[row].length - word.length, el = $('ac');
   el.style.left = Math.max(48, Math.min(46 + 10 + col * S.charW - ta.scrollLeft, ta.clientWidth - 150)) + 'px';
   el.style.top = (PAD + (row + 1) * LH - ta.scrollTop) + 'px'; acRender(); el.style.display = 'block';
@@ -306,11 +314,13 @@ $('code').addEventListener('input', () => { onEdit(); acUpdate(); });
 $('code').addEventListener('keydown', e => {
   const ta = e.target;
   if (ac.open) {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); ac.i = (ac.i + (e.key === 'ArrowDown' ? 1 : -1) + ac.items.length) % ac.items.length; return acRender(); }
-    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); return acAccept(); }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); ac.nav = true; ac.i = (ac.i + (e.key === 'ArrowDown' ? 1 : -1) + ac.items.length) % ac.items.length; return acRender(); }
+    if (e.key === 'Tab' || (e.key === 'Enter' && ac.nav)) { e.preventDefault(); return acAccept(); }       // Enter only accepts after you moved in the list
     if (e.key === 'Escape') { e.preventDefault(); return acHide(); }
   }
-  if (e.key === 'Tab') { e.preventDefault(); ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end'); onEdit(); }
+  const leave = escTab; if (e.key !== 'Tab' && e.key !== 'Shift') escTab = false;
+  if (e.key === 'Escape') { escTab = true; return; }
+  if (e.key === 'Tab' && !e.shiftKey && !leave) { e.preventDefault(); ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end'); onEdit(); }
   else if (e.key === 'Enter') {
     e.preventDefault();
     const pos = ta.selectionStart, line = ta.value.slice(0, pos).split('\n').pop();

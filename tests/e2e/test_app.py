@@ -40,6 +40,19 @@ def test_python_error_infinite_loop_and_big_calculation(page, static_url):
     page.locator('#output', has_text='1999999000000').wait_for(timeout=60_000)
 
 
+def test_python_visual_shows_frames_objects_and_shared_references(page, static_url):
+    python_ready(page, static_url)
+    set_code(page, 'def f(n):\n    total = n * 2\n    return total\nnums = [4, 8]\nb = nums\nx = f(3)\n')
+    page.locator('#result tr', has_text='total').or_(page.locator('#result tr', has_text='b')).first.wait_for(timeout=30_000)
+    page.locator('.tframe tr', has_text='x').first.wait_for(timeout=30_000)           # this program's own variable (x), not the previous example's
+    assert page.locator('.tframe .tname', has_text='Global frame').count() == 1
+    assert page.locator('.tobj .ty', has_text='list').count() == 1           # nums and b share ONE list object ...
+    assert page.locator('path.tarrow').count() >= 3                          # ... with arrows from both names (and f -> function)
+    page.click('.vtabs [data-v=cards]')
+    assert page.locator('.var').count() >= 2
+    assert csp(page) == []
+
+
 def test_python_input_values_come_from_the_header_popover(page, static_url):
     python_ready(page, static_url)
     page.click('#stdinBtn')
@@ -77,6 +90,27 @@ def test_sql_row_count_drop_is_shown_without_csp_violation(page, static_url):
     assert csp(page) == []
 
 
+def test_sql_tidy_keeps_comments_and_quoted_text_intact(page, static_url):
+    sql_ready(page, static_url)
+    set_code(page, "-- find big spenders\nselect name, 'a   b -- not a comment' as t from customers where id > 1 order by name", '#sql')
+    page.click('#fmt')
+    tidy = page.input_value('#sql')
+    assert tidy.startswith('-- find big spenders\nSELECT')           # the comment stays on its own line
+    assert "'a   b -- not a comment'" in tidy                       # text in quotes is untouched
+    assert '\nFROM' in tidy and '\nWHERE' in tidy and '\nORDER BY' in tidy
+    page.click('#run')
+    page.locator('#result .grid').wait_for(timeout=30_000)          # and the tidied query still runs
+
+
+def test_sql_drop_zones_work_from_the_keyboard(page, static_url):
+    sql_ready(page, static_url, close_dialog=False)
+    page.click('.dtabs [data-d=file]')
+    with page.expect_file_chooser() as fc:
+        page.focus('#fdrop')
+        page.keyboard.press('Enter')
+    assert fc.value is not None
+
+
 def test_sql_static_site_has_no_connect_tab_but_explains_uploading(page, static_url):
     sql_ready(page, static_url, close_dialog=False)
     assert not page.locator('.dtabs [data-d=live]').is_visible()
@@ -88,6 +122,27 @@ def test_sql_bridge_site_has_connect_tab(page, bridge_site):
     sql_ready(page, bridge_site, close_dialog=False)
     assert page.locator('.dtabs [data-d=live]').is_visible()
     assert page.locator('#liveForm').is_visible()
+
+
+def test_python_lab_cannot_reach_the_bridge_api(page, bridge_site):
+    """Through the bridge the Python lab runs on the 'localhost' origin, so code you run there cannot read the API token."""
+    port = bridge_site.rsplit(':', 1)[1]
+    page.goto(f'{bridge_site}/index.html#python')
+    frame = next(f for f in (page.wait_for_selector('#fr-python').content_frame() and page.frames) if f.url.startswith(f'http://localhost:{port}/'))
+    frame.wait_for_load_state()
+    same_origin, cross_origin = frame.evaluate("""async (port) => {
+      const a = (await fetch('/api/session')).status;                                  // same origin (localhost): refused
+      let b = 'blocked';
+      try { const r = await fetch('http://127.0.0.1:' + port + '/api/session'); await r.json(); b = 'READ THE TOKEN'; } catch (e) { b = 'blocked'; }
+      return [a, b];
+    }""", port)
+    assert same_origin == 403 and cross_origin == 'blocked'
+    # the other labs (127.0.0.1 origin) do get the bridge, and switching labs still works across the two origins
+    frame.locator('.labnav a', has_text='SQL').click()
+    sq = page.frame_locator('#fr-sql')
+    sq.locator('#status.ok').wait_for(timeout=60_000)
+    # the Connect tab lives inside the (possibly closed) dialog, so check that it is switched on, not that it is on screen
+    sq.locator('.dtabs [data-d=live]:not([hidden])').wait_for(state='attached', timeout=15_000)
 
 
 @pytest.mark.parametrize('name, tables', [('pg_plain.sql', 2), ('pg_custom.dump', 2), ('pg_tar_format.tar', 2), ('mysql_dump.sql', 1)])
@@ -160,13 +215,14 @@ def test_shell_switches_labs_and_keeps_state(page, static_url):
     py = page.frame_locator('#fr-python')
     py.locator('#status.ok').wait_for(timeout=120_000)
     py.locator('.labnav a', has_text='SQL').click()
-    assert page.evaluate("document.querySelector('#fr-sql').classList.contains('on')")
+    page.locator('#fr-sql.on').wait_for(state='visible', timeout=15_000)
     sq = page.frame_locator('#fr-sql')
     sq.locator('#status.ok').wait_for(timeout=60_000)
     sq.locator('.labnav a', has_text='Flowchart').click()
-    assert page.evaluate("document.querySelector('#fr-flow').classList.contains('on')") and page.url.endswith('#flow')
+    page.locator('#fr-flow.on').wait_for(state='visible', timeout=15_000)
+    assert page.url.endswith('#flow')
     page.frame_locator('#fr-flow').locator('.labnav a', has_text='Python').click()
-    assert page.evaluate("document.querySelector('#fr-python').classList.contains('on')")
+    page.locator('#fr-python.on').wait_for(state='visible', timeout=15_000)
     assert page.locator('iframe.on').count() == 1
 
 
@@ -214,9 +270,13 @@ def test_xss_probes_are_inert_in_every_lab(page, static_url, tmp_path):
     page.click('.dtabs [data-d=file]')
     page.set_input_files('#dbFile', str(tmp_path / 'evil.sql'))
     page.locator('#fileMsg.ok').wait_for(timeout=30_000)
+    page.locator('dialog').wait_for(state='hidden', timeout=10_000)             # the page is inert while the dialog is open
     set_code(page, f'SELECT * FROM "{EVIL}"', '#sql')
     page.click('#run')
-    page.locator('#result .grid').wait_for(timeout=30_000)
+    try:
+        page.locator('#result .grid').wait_for(timeout=30_000)
+    except Exception:
+        raise AssertionError(f"no result grid; status={page.inner_text('#status')!r} log={page.inner_text('#log')[:300]!r} sql={page.input_value('#sql')!r} errors={page.errors} console={page.console[-8:]}")
     page.wait_for_timeout(600)
     assert page.locator('img[src="x"], svg[onload]').count() == 0
     assert page.evaluate('window.__pwned') is None

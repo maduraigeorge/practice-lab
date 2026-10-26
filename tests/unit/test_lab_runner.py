@@ -1,5 +1,6 @@
 """Unit tests for the Python lab runner (assets/py/lab_runner.py): tracing, explanations, safety."""
 import ast
+import pytest
 import json
 import time
 
@@ -16,7 +17,8 @@ def test_simple_program_runs_and_traces(lab_runner):
     d = run(lab_runner, 'x = 2\ny = x * 3\nprint(y)\ny\n')
     assert d['ok'] and d['output'] == '6\n'
     assert d['last']['r'] == '6'
-    assert [s['line'] for s in d['steps']] == [1, 2, 3, 4]      # the last bare expression is a step too
+    assert [s['line'] for s in d['steps'] if s['kind'] == 'line'] == [1, 2, 3, 4]      # the last bare expression is a step too
+    assert d['steps'][-1]['kind'] == 'end' and 'finished' in d['steps'][-1]['text']
     assert d['final']['y']['r'] == '6'
 
 
@@ -54,7 +56,7 @@ def test_if_condition_notes(lab_runner):
 
 def test_comprehension_is_a_single_step_and_explained(lab_runner):
     d = run(lab_runner, 'nums = [1, 2, 3, 4]\nev = [n for n in nums if n % 2 == 0]\n')
-    assert [s['line'] for s in d['steps']] == [1, 2]
+    assert [s['line'] for s in d['steps'] if s['kind'] == 'line'] == [1, 2]
     assert 'comprehension' in d['steps'][1]['text']
 
 
@@ -73,6 +75,18 @@ def test_error_has_line_and_hint(lab_runner):
 def test_syntax_error_reported(lab_runner):
     d = run(lab_runner, 'x = (\n')
     assert not d['ok'] and d['error']['type'] == 'SyntaxError' and d['error']['line'] == 1
+
+
+@pytest.mark.parametrize('code, msg', [('return 5\n', 'outside function'), ('break\n', 'outside loop'), ('x = ' + '(' * 300 + '1' + ')' * 300 + '\n', 'nested')])
+def test_compile_time_errors_are_reported_not_crashed(lab_runner, code, msg):
+    d = run(lab_runner, code)
+    assert not d['ok'] and d['error']['type'] in ('SyntaxError', 'RecursionError', 'MemoryError') and msg in d['error']['msg']
+
+
+def test_only_the_step_that_really_failed_is_marked_uncaught(lab_runner):
+    d = run(lab_runner, 'try:\n    1 / 0\nexcept ZeroDivisionError:\n    pass\nraise ValueError("late")\n')
+    marked = {s['line']: s.get('fatal') for s in d['steps'] if s.get('exc')}
+    assert marked == {2: None, 5: True}
 
 
 def test_infinite_loop_is_detected_fast(lab_runner):
@@ -97,6 +111,17 @@ def test_recursion_stack_and_return_steps(lab_runner):
     d = run(lab_runner, 'def f(n):\n    return 1 if n < 2 else n * f(n - 1)\nf(4)\n')
     kinds = {s['kind'] for s in d['steps']}
     assert {'call', 'return', 'line'} <= kinds and d['last']['r'] == '24'
+
+
+def test_every_live_frame_is_recorded_for_the_visual(lab_runner):
+    d = run(lab_runner, 'def f(n):\n    return 1 if n < 2 else n * f(n - 1)\nnums = [1]\nf(3)\n')
+    frames = [s['frames'] for s in d['steps'] if 'frames' in s]
+    assert max(len(f) for f in frames) == 4                              # global frame + three nested calls
+    assert frames[-1][0]['name'] == 'Global frame'
+    names = {k for fs in frames for fr in fs for k in fr['vars']}
+    assert 'input' not in names and {'f', 'nums', 'n'} <= names          # our injected input() helper stays hidden
+    nums = next(fr['vars']['nums'] for fs in frames for fr in fs if 'nums' in fr['vars'])
+    assert nums['k'] == 'seq' and nums['id']                              # objects carry an id so aliases can share an arrow
 
 
 def test_explainer_never_runs_user_code(lab_runner):

@@ -4,8 +4,9 @@
  * Request : { id, type, ...payload }
  * Response: { id, ok: true, result } | { id, ok: false, error }
  * Types   : open {bytes?}, script {sql}, import {statements, csv, extra}, exec {sql, limit}, schema, export
- * Any result that contains `bytes` is a fresh snapshot of the database (sent after every change) so the page can
- * restore it if this worker has to be terminated. */
+ * A result that contains `bytes` is a fresh snapshot of the database (sent after changes) so the page can restore it if this
+ * worker has to be terminated. Note: sql.js can only export by closing and re-opening the connection, which drops TEMP
+ * tables and PRAGMA settings - so no snapshot is taken while TEMP objects exist. */
 importScripts('../vendor/sqljs/sql-wasm.js');
 
 let SQL = null, db = null, extra = { fks: [], pks: [] };
@@ -32,6 +33,7 @@ function schema() {
 }
 
 const fingerprint = () => `${db.exec('SELECT total_changes()')[0].values[0][0]}/${db.exec('PRAGMA schema_version')[0].values[0][0]}`;
+const hasTempObjects = () => db.exec('SELECT count(*) FROM sqlite_temp_master')[0].values[0][0] > 0;
 const snapshot = () => db.export();
 const replaceDb = nd => { if (db) db.close(); db = nd; };
 
@@ -66,16 +68,21 @@ const handlers = {
     return { schema: schema(), ok, failed, errors, bytes: snapshot() };
   },
   exec({ sql, limit }) {
-    const t0 = performance.now(), before = fingerprint();
-    const res = db.exec(sql);
-    const sets = res.map(r => ({
-      columns: r.columns,
-      rows: r.values.slice(0, limit).map(row => row.map(v => (v instanceof Uint8Array ? '[blob]' : v))),
-      truncated: r.values.length > limit,
-    }));
-    if (!res.length) sets.push({ columns: [], rows: [], rowcount: db.getRowsModified() });
+    const t0 = performance.now(), before = fingerprint(), sets = [];
+    // Statement by statement and row by row, so a query that would return millions of rows never fills the memory.
+    for (const st of db.iterateStatements(sql)) {
+      const columns = st.getColumnNames();
+      if (!columns.length) { st.step(); continue; }
+      const rows = []; let truncated = false;
+      while (st.step()) {
+        if (rows.length >= limit) { truncated = true; break; }
+        rows.push(st.get().map(v => (v instanceof Uint8Array ? '[blob]' : v)));
+      }
+      sets.push({ columns, rows, truncated });
+    }
+    if (!sets.length) sets.push({ columns: [], rows: [], rowcount: db.getRowsModified() });
     const out = { sets, ms: Math.round((performance.now() - t0) * 10) / 10, notices: [] };
-    if (fingerprint() !== before) { out.schema = schema(); out.bytes = snapshot(); }
+    if (fingerprint() !== before) { out.schema = schema(); if (!hasTempObjects()) out.bytes = snapshot(); }
     return out;
   },
   schema() { return { schema: schema() }; },

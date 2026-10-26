@@ -3,6 +3,7 @@ import { $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, 
 import { initDock } from './dock.js';
 
 const LH = 20, PAD = 8;
+let vizMode = store.get('pyLab.viz', 'tutor');
 mountLabNav('python');
 initPopover($('stdinBtn'), $('stdinPop'));
 
@@ -104,7 +105,7 @@ function renderSteps() {
   else box.innerHTML = st.map((s, i) => {
     const cls = s.kind === 'line' ? '' : ' k-' + s.kind;
     const err = s.exc && s.fatal ? ' k-err' : '';
-    return `<div class="step${cls}${err}" data-i="${i}"><span class="n">${i + 1}</span><span class="ln mono">${s.kind === 'call' ? 'call' : s.kind === 'return' ? 'ret' : 'L' + s.line}</span>` +
+    return `<div class="step${cls}${err}" data-i="${i}"><span class="n">${i + 1}</span><span class="ln mono">${s.kind === 'call' ? 'call' : s.kind === 'return' ? 'ret' : s.kind === 'end' ? 'end' : 'L' + s.line}</span>` +
            `<span class="tx">${md(s.text)}<code class="src">${esc(s.src.trim())}</code></span></div>`;
   }).join('') + (data.trunc ? '<div class="empty more-note">…more steps not shown (limit 600).</div>' : '');
   const sl = $('slider'); sl.max = Math.max(0, st.length - 1);
@@ -154,7 +155,7 @@ function varsHTML(vars, changed, hideFn) {
   });
   return cards.length ? `<div class="vars">${cards.join('')}</div>` : '<span class="empty">no variables yet</span>';
 }
-function renderVisual(s) {
+function renderCards(s) {
   const label = f => f === '<module>' ? 'main program' : f;
   let h = '<div class="stack"><span class="label">Call stack:</span>' +
     s.stack.map((f, i) => `<span class="frame${i === s.stack.length - 1 ? ' top' : ''} mono">${esc(label(f))}</span>`).join('<span class="arrow">→</span>') + '</div>';
@@ -163,6 +164,94 @@ function renderVisual(s) {
   if (inFn && s.glob && Object.values(s.glob).some(o => o.k !== 'fn')) h += '<div class="sec">Global variables</div>' + varsHTML(s.glob, [], true);
   $('visual').innerHTML = h;
 }
+function renderVisual(s) { if (vizMode === 'tutor') renderTutor(s); else renderCards(s); }
+
+/* ---------- Frames & Objects view (in the spirit of Python Tutor): frames on the left, heap objects on the right, arrows between ---------- */
+const SVGNS = 'http://www.w3.org/2000/svg';
+const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+const isRef = o => o && ['seq', 'map', 'o', 'fn'].includes(o.k) && o.id;
+let tutorRO = null;
+
+function objLabel(o) {
+  if (o.k === 'fn') { const m = /^<(?:function|class) '?([\w.<>]+)/.exec(o.r); return (o.t === 'type' ? 'class ' : 'function ') + (m ? m[1].replace('__main__.', '') : ''); }
+  if (o.k === 'o') return o.t === 'type' ? 'class' : 'instance of ' + o.t;
+  return o.t;
+}
+
+function renderTutor(s) {
+  const frames = s.frames && s.frames.length ? s.frames
+    : [{ name: 'Global frame', vars: s.fn === '<module>' ? s.after : (s.glob || {}), cur: s.fn === '<module>' }].concat(s.fn !== '<module>' ? [{ name: s.fn, vars: s.after, cur: true }] : []);
+  const root = mk('div', 'tutor'), colF = mk('div', 'tcol'), colO = mk('div', 'tcol');
+  colF.appendChild(mk('h3', '', 'Frames')); colO.appendChild(mk('h3', '', 'Objects'));
+  const svg = document.createElementNS(SVGNS, 'svg'); svg.setAttribute('class', 'tarrows');
+  svg.innerHTML = '<defs><marker id="tarrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="tarrowhead"/></marker></defs>';
+  const heap = new Map(), order = [], links = [];
+  const addObj = o => { if (isRef(o) && !heap.has(o.id)) { heap.set(o.id, o); order.push(o.id); } };
+  const valueCell = (o, td, fromObj) => {
+    if (isRef(o)) { const d = mk('span', 'tdot'); td.appendChild(d); links.push({ from: d, to: o.id, inHeap: fromObj }); addObj(o); }
+    else td.appendChild(mk('span', 'tval mono', o.r));
+  };
+
+  frames.forEach(fr => {
+    const box = mk('div', 'tframe' + (fr.cur ? ' cur' : '')), tbl = mk('table');
+    box.appendChild(mk('div', 'tname', fr.name));
+    const entries = Object.entries(fr.vars);
+    entries.forEach(([n, o]) => {
+      const tr = tbl.insertRow(); if (fr.cur && s.changed.includes(n)) tr.className = 'chg';
+      tr.insertCell().textContent = n; valueCell(o, tr.insertCell(), false);
+    });
+    if (s.kind === 'return' && fr.cur && s.value) { const tr = tbl.insertRow(); tr.className = 'ret'; tr.insertCell().textContent = 'Return value'; valueCell(s.value, tr.insertCell(), false); }
+    if (!entries.length && !(s.kind === 'return' && fr.cur)) { const tr = tbl.insertRow(); const td = tr.insertCell(); td.colSpan = 2; td.className = 'empty'; td.textContent = 'no variables yet'; }
+    box.appendChild(tbl); colF.appendChild(box);
+  });
+
+  for (let i = 0; i < order.length; i++) {          // objects discovered while drawing others are appended to `order`
+    const o = heap.get(order[i]), box = mk('div', 'tobj'); box.dataset.id = o.id;
+    box.appendChild(mk('div', 'ty', objLabel(o)));
+    if (o.k === 'seq') {
+      const cells = mk('div', 'cells');
+      o.items.forEach((x, k) => { const c = mk('div', 'cell'); if (o.ordered) c.appendChild(mk('div', 'ix', String(k))); const v = mk('div', 'v mono'); valueCell(x, v, true); c.appendChild(v); cells.appendChild(c); });
+      if (!o.items.length) cells.appendChild(mk('span', 'empty pad', 'empty'));
+      if (o.more) cells.appendChild(mk('span', 'more', `+${o.more} more`));
+      box.appendChild(cells);
+    } else if (o.k === 'map') {
+      const tb = mk('table', 'kv mono');
+      o.items.forEach(([k, v]) => { const tr = tb.insertRow(); const tk = tr.insertCell(); tk.className = 'k'; valueCell(k, tk, true); valueCell(v, tr.insertCell(), true); });
+      if (!o.items.length) { const td = tb.insertRow().insertCell(); td.className = 'empty'; td.textContent = 'empty'; }
+      box.appendChild(tb);
+    } else {
+      const nm = (/^<(?:function|class) '?([\w.<>]+)/.exec(o.r) || [, ''])[1].replace('__main__.', '');
+      box.appendChild(mk('div', 'tval mono pad', o.k === 'fn' ? (o.t === 'type' ? `class ${nm}` : `def ${nm}(…)`) : o.r));
+    }
+    colO.appendChild(box);
+  }
+  if (!order.length) colO.appendChild(mk('div', 'empty', 'Lists, dictionaries, functions … appear here.'));
+
+  root.append(svg, colF, colO);
+  $('visual').replaceChildren(root);
+  const draw = () => {
+    svg.querySelectorAll('path.tarrow').forEach(p => p.remove());
+    const base = root.getBoundingClientRect();
+    for (const l of links) {
+      const target = root.querySelector(`.tobj[data-id="${l.to}"]`); if (!target) continue;
+      const a = l.from.getBoundingClientRect(), b = target.getBoundingClientRect();
+      const x1 = a.left + a.width / 2 - base.left, y1 = a.top + a.height / 2 - base.top;
+      let d;
+      if (l.inHeap) { const x2 = b.left - base.left + 14, y2 = b.top - base.top; d = `M${x1},${y1} C${x1},${y1 + 34} ${x2},${y2 - 34} ${x2},${y2}`; }
+      else { const x2 = b.left - base.left, y2 = b.top - base.top + Math.min(14, b.height / 2); const dx = Math.max(30, (x2 - x1) / 2); d = `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`; }
+      const p = document.createElementNS(SVGNS, 'path'); p.setAttribute('d', d); p.setAttribute('class', 'tarrow'); p.setAttribute('marker-end', 'url(#tarrow)'); svg.appendChild(p);
+    }
+  };
+  draw();
+  if (tutorRO) tutorRO.disconnect();
+  tutorRO = new ResizeObserver(draw); tutorRO.observe(root);
+}
+
+document.querySelectorAll('.vtabs button').forEach(b => {
+  b.classList.toggle('on', b.dataset.v === vizMode);
+  b.onclick = () => { vizMode = b.dataset.v; store.set('pyLab.viz', vizMode); document.querySelectorAll('.vtabs button').forEach(x => x.classList.toggle('on', x === b)); if (data && data.steps.length) renderVisual(data.steps[idx]); };
+});
+
 function positionBands() {
   const ta = $('code');
   const place = (el, line) => { el.style.top = (PAD + (line - 1) * LH - ta.scrollTop) + 'px'; };
@@ -193,7 +282,8 @@ const METHODS = {
   dict: 'clear copy get items keys pop setdefault update values'.split(' '),
 };
 const ALL_METHODS = [...new Set([].concat(...Object.values(METHODS)))].sort();
-const ac = { items: [], i: 0, start: 0, open: false };
+const ac = { items: [], i: 0, start: 0, open: false, nav: false };
+let escTab = false;         // Esc, then Tab, moves focus out of the editor (Tab otherwise indents)
 let charW = 8.4;
 function acHide() { ac.open = false; $('ac').style.display = 'none'; }
 function acUpdate() {
@@ -213,7 +303,7 @@ function acUpdate() {
   const seen = new Set(), lw = word.toLowerCase();
   const items = pool.filter(([n]) => !seen.has(n) && seen.add(n) && n !== word && n.toLowerCase().startsWith(lw)).slice(0, 30);
   if (!items.length) return acHide();
-  ac.items = items; ac.i = 0; ac.start = pos - word.length; ac.open = true;
+  ac.items = items; ac.i = 0; ac.start = pos - word.length; ac.open = true; ac.nav = false;
   const lines = before.split('\n'), row = lines.length - 1, col = lines[row].length - word.length;
   const el = $('ac');
   el.style.left = Math.min(46 + 10 + col * charW - ta.scrollLeft, ta.clientWidth - 150) + 'px';
@@ -241,12 +331,14 @@ $('code').addEventListener('keydown', e => {
   const ta = e.target;
   if (ac.open) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault(); ac.i = (ac.i + (e.key === 'ArrowDown' ? 1 : -1) + ac.items.length) % ac.items.length; return acRender();
+      e.preventDefault(); ac.nav = true; ac.i = (ac.i + (e.key === 'ArrowDown' ? 1 : -1) + ac.items.length) % ac.items.length; return acRender();
     }
-    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); return acAccept(); }
+    if (e.key === 'Tab' || (e.key === 'Enter' && ac.nav)) { e.preventDefault(); return acAccept(); }       // Enter only accepts after you moved in the list
     if (e.key === 'Escape') { e.preventDefault(); return acHide(); }
   }
-  if (e.key === 'Tab') {
+  const leave = escTab; if (e.key !== 'Tab' && e.key !== 'Shift') escTab = false;
+  if (e.key === 'Escape') { escTab = true; return; }
+  if (e.key === 'Tab' && !e.shiftKey && !leave) {
     e.preventDefault(); ta.setRangeText('    ', ta.selectionStart, ta.selectionEnd, 'end'); onEdit();
   } else if (e.key === 'Enter') {
     e.preventDefault();

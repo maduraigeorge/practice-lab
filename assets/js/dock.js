@@ -12,9 +12,16 @@ export function initDock(cfg) {
   const B = s => typeof s === 'string' ? { t: 'p', id: s } : { t: 's', dir: s.d, kids: s.k.map(([w, x]) => Object.assign(B(x), { w })) };
   const fresh = name => ({ preset: name, tree: B(cfg.presets[name]), hidden: [], solo: null });
   const ids = (n, o = []) => { if (n.t === 'p') o.push(n.id); else n.kids.forEach(k => ids(k, o)); return o; };
-  const valid = t => { const a = ids(t).sort().join(), b = cfg.panels.slice().sort().join(); return a === b; };
+  // A saved layout is only trusted if its whole shape is right (it comes from localStorage and may be stale or hand-edited).
+  const shapeOk = (n, d = 0) => !!n && d < 12 && (n.t === 'p' ? typeof n.id === 'string' && (n.w === undefined || (typeof n.w === 'number' && n.w > 0 && isFinite(n.w)))
+    : n.t === 's' && (n.dir === 'h' || n.dir === 'v') && Array.isArray(n.kids) && n.kids.length > 0 && (n.w === undefined || (typeof n.w === 'number' && n.w > 0 && isFinite(n.w))) && n.kids.every(k => shapeOk(k, d + 1)));
+  const valid = t => { if (!shapeOk(t)) return false; const a = ids(t).sort().join(), b = cfg.panels.slice().sort().join(); return a === b; };
   let st = null;
-  try { const s = JSON.parse(localStorage.getItem(cfg.key)); if (s && s.tree && valid(s.tree)) st = s; } catch (e) {}
+  try {
+    const s = JSON.parse(localStorage.getItem(cfg.key));
+    if (s && s.tree && valid(s.tree) && (s.hidden === undefined || (Array.isArray(s.hidden) && s.hidden.every(h => cfg.panels.includes(h))))
+        && (!s.solo || cfg.panels.includes(s.solo)) && cfg.panels.some(p => !(s.hidden || []).includes(p))) st = s;
+  } catch (e) { /* unreadable: start fresh */ }
   if (!st) st = fresh(cfg.def);
   st.hidden = st.hidden || []; st.solo = st.solo || null;
   const save = () => { try { localStorage.setItem(cfg.key, JSON.stringify(st)); } catch (e) {} };
@@ -36,6 +43,7 @@ export function initDock(cfg) {
     if (mq.matches) {
       main.classList.remove('dk'); if (root) { root.remove(); root = null; }
       cfg.panels.forEach(id => { panels[id].style.flex = ''; main.insertBefore(panels[id], hold); });
+      tray.classList.remove('on');
       return;
     }
     main.classList.add('dk');
@@ -124,7 +132,7 @@ export function initDock(cfg) {
   /* ---- minimise / maximise buttons ---- */
   cfg.panels.forEach(id => {
     const h2 = panels[id].querySelector('h2'), wc = document.createElement('span'); wc.className = 'wc';
-    wc.innerHTML = '<button class="wb" data-a="min" title="Minimise (restore from the bar below)">▁</button><button class="wb" data-a="max" title="Maximise / restore">⛶</button>';
+    wc.innerHTML = '<button class="wb" data-a="min" title="Minimise (restore from the bar below)" aria-label="Minimise this box">▁</button><button class="wb" data-a="max" title="Maximise / restore" aria-label="Maximise or restore this box">⛶</button>';
     h2.appendChild(wc);
     wc.addEventListener('click', e => {
       const a = e.target.closest('button'); if (!a) return;
@@ -148,5 +156,5 @@ export function initDock(cfg) {
   };
   const sp = document.querySelector('header .spacer'); if (sp) sp.after(sel);
   mq.addEventListener('change', render);
-  render();
+  try { render(); } catch (e) { console.error(e); st = fresh(cfg.def); save(); render(); }          // never leave the page without a layout
 }

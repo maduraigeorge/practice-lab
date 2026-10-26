@@ -22,7 +22,8 @@ def test_index_and_lab_pages_are_served_with_security_headers(bridge_url):
         status, headers, _ = request(bridge_url, 'GET', path)
         assert status == 200, path
         assert "default-src 'none'" in headers['Content-Security-Policy']
-        assert headers['X-Frame-Options'] == 'SAMEORIGIN'
+        assert 'frame-ancestors' in headers['Content-Security-Policy']
+        assert ("frame-ancestors 'none'" in headers['Content-Security-Policy']) == (path in ('/', '/index.html'))   # only the shell refuses framing
         assert headers['X-Content-Type-Options'] == 'nosniff'
         assert headers['Referrer-Policy'] == 'no-referrer'
 
@@ -47,6 +48,40 @@ def test_private_or_missing_files_are_not_served(bridge_url, path):
 def test_wrong_host_header_is_rejected(bridge_url):
     assert request(bridge_url, 'GET', '/', host='evil.example')[0] == 403
     assert request(bridge_url, 'GET', '/api/session', host=f'attacker.test:{bridge_url}')[0] == 403
+
+
+def test_api_is_unreachable_from_the_localhost_origin(bridge_url):
+    """The Python lab is served from http://localhost:PORT; code run there must not be able to use the API."""
+    lh = f'localhost:{bridge_url}'
+    assert request(bridge_url, 'GET', '/api/session', host=lh)[0] == 403
+    assert request(bridge_url, 'POST', '/api/query', {'Content-Type': 'application/json', 'X-Bridge-Token': 'x'}, '{}', host=lh)[0] == 403
+    status, headers, _ = request(bridge_url, 'GET', '/labs/python-lab.html', host=lh)
+    assert status == 200                                                    # the Python lab itself is served there
+    assert request(bridge_url, 'GET', '/assets/js/python-lab.js', host=lh)[0] == 200
+    for page in ('/', '/index.html', '/labs/sql-lab.html', '/labs/flow-lab.html'):
+        status, headers, _ = request(bridge_url, 'GET', page, host=lh)
+        assert status == 302 and headers['Location'] == f'http://127.0.0.1:{bridge_url}{page}'
+
+
+def test_unread_request_bodies_cannot_smuggle_a_second_request(bridge_url):
+    """A refused POST must still consume its body, otherwise the body is parsed as the next request on the connection."""
+    import socket
+    inner = f'GET /api/session HTTP/1.1\r\nHost: 127.0.0.1:{bridge_url}\r\n\r\n'
+    outer = (f'POST /api/query HTTP/1.1\r\nHost: 127.0.0.1:{bridge_url}\r\nOrigin: http://evil.example\r\n'
+             f'Content-Type: application/json\r\nContent-Length: {len(inner)}\r\n\r\n{inner}')
+    sock = socket.create_connection(('127.0.0.1', bridge_url), timeout=3)
+    sock.sendall(outer.encode())
+    data = b''
+    try:
+        while True:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            data += chunk
+    except socket.timeout:
+        pass
+    sock.close()
+    assert data.count(b'HTTP/1.') == 1 and b'"token"' not in data
 
 
 def test_session_token_only_for_same_origin(bridge_url):
@@ -99,6 +134,29 @@ def test_guard_blocks_transaction_control(bridge, sql):
 ])
 def test_guard_allows_normal_queries(bridge, sql):
     bridge.check_guard(sql, 'readonly')
+
+
+@pytest.mark.parametrize('kind, sql', [
+    ('postgres', "SELECT E'\\''; COMMIT; DELETE FROM t; SELECT '"),                    # backslash-escaped quote in an E'' string hides nothing now
+    ('mysql', "SELECT '\\''; COMMIT; DELETE FROM t; SELECT '"),                        # MySQL backslash escapes
+    ('mysql', '/*!50000 COMMIT */'),                                                     # MySQL executable comment
+    ('mysql', 'SET @@session.transaction_read_only = 0'), ('mysql', 'SET SESSION tx_read_only = 0'),
+    ('postgres', "SELECT set_config('transaction_read_only', 'off', false)"), ('postgres', 'PREPARE TRANSACTION \'x\''),
+    ('postgres', 'SET transaction_read_only = off'), ('postgres', 'COMMIT PREPARED \'x\''),
+])
+def test_guard_bypasses_found_in_review_are_blocked(bridge, kind, sql):
+    with pytest.raises(bridge.ApiError):
+        bridge.check_guard(sql, 'readonly', kind)
+
+
+def test_guard_rollback_mode_refuses_mysql_ddl_but_not_postgres(bridge):
+    for sql in ('CREATE TABLE t (a int)', 'DROP TABLE t', 'ALTER TABLE t ADD b int', 'TRUNCATE t'):
+        with pytest.raises(bridge.ApiError):
+            bridge.check_guard(sql, 'rollback', 'mysql')
+        bridge.check_guard(sql, 'rollback', 'postgres')           # PostgreSQL DDL is transactional
+        bridge.check_guard(sql, 'commit', 'mysql')
+    bridge.check_guard("SELECT 'it''s fine; COMMIT'", 'readonly', 'postgres')
+    bridge.check_guard("SELECT $$ ; COMMIT ; $$", 'readonly', 'postgres')
 
 
 def test_mask_sql_hides_strings_and_comments(bridge):

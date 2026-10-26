@@ -52,6 +52,7 @@ def ser(v, d=0):
         o['more'] = max(0, len(items) - 40)
     elif callable(v):
         o['k'] = 'fn'
+        o['id'] = id(v)
     else:
         o['k'] = 'o'
         o['id'] = id(v)
@@ -61,7 +62,7 @@ def ser(v, d=0):
 def snap(ns):
     out = {}
     for k, v in list(ns.items()):
-        if k.startswith('__') or isinstance(v, type(sys)):
+        if k.startswith('__') or isinstance(v, type(sys)) or (k == 'input' and getattr(v, '__name__', '') == 'fake_input'):
             continue
         out[k] = ser(v)
     return out
@@ -545,6 +546,8 @@ def line_notes(stmt, frame, code):
 
 def _explain_base(rec, lines):
     k = rec['kind']
+    if k == 'end':
+        return 'The program has finished. This is the final state of everything it created.'
     if k == 'call':
         return f"Calls `{rec['fn']}({rec['args']})`. Python jumps into the function and adds a new frame to the call stack."
     if k == 'return':
@@ -651,11 +654,26 @@ def run(code, stdin_text):
         steps.append(rec)
         return rec
 
+    def frames_of(frame):
+        """Every live user frame, outermost first: [{'name', 'vars', 'cur'}] - the data behind the Frames & Objects view."""
+        chain, f = [], frame
+        while f is not None:
+            if f.f_code.co_filename == '<user>' and f.f_code.co_name not in NOISE:
+                chain.append(f)
+            f = f.f_back
+        chain.reverse()
+        out = []
+        for f in chain[-12:]:
+            top = f.f_code.co_name == '<module>'
+            out.append({'name': 'Global frame' if top else f.f_code.co_name, 'vars': snap(f.f_globals if top else f.f_locals), 'cur': f is frame})
+        return out
+
     def close(frame, rec, nxt):
         top = frame.f_code.co_name == '<module>'
         rec['after'] = snap(frame.f_globals if top else frame.f_locals)
         if not top:
             rec['glob'] = snap(frame.f_globals)
+        rec['frames'] = frames_of(frame)
         rec['next'] = nxt
 
     detect = not re.search(r'\b(random|time|datetime|secrets|uuid|os|threading|input)\b', code)
@@ -729,6 +747,7 @@ def run(code, stdin_text):
             rec = new_rec('call', frame, args=args)
             if rec:
                 rec['after'] = rec['before']
+                rec['frames'] = frames_of(frame)
             return tracer
         if event == 'line':
             old = pend.pop(frame, None)
@@ -754,6 +773,7 @@ def run(code, stdin_text):
                 rec = new_rec('return', frame, value=ser(arg))
                 if rec:
                     rec['after'] = rec['before']
+                    rec['frames'] = frames_of(frame)
             if state['stack']:
                 state['stack'].pop()
         return tracer
@@ -769,16 +789,23 @@ def run(code, stdin_text):
         for node in ast.walk(tree):
             if isinstance(node, ast.stmt):
                 stmts.setdefault(node.lineno, node)
-    except SyntaxError as e:
+    except (SyntaxError, ValueError, RecursionError, MemoryError) as e:
         et = type(e).__name__
-        return result(ok=False, error={'type': et, 'msg': e.msg, 'line': e.lineno, 'hint': HINTS.get(et, HINTS['SyntaxError'])})
+        msg = getattr(e, 'msg', None) or ('The code is too deeply nested to read.' if et in ('RecursionError', 'MemoryError') else str(e))
+        return result(ok=False, error={'type': et, 'msg': msg, 'line': getattr(e, 'lineno', None), 'hint': HINTS.get(et, HINTS['SyntaxError'])})
 
     body = tree.body
     last_expr = None
     if body and isinstance(body[-1], ast.Expr):
         last_expr = ast.Expression(body[-1].value)
         body = body[:-1]
-    code_obj = compile(ast.Module(body=body, type_ignores=[]), '<user>', 'exec')
+    try:                                           # some errors (return outside a function, break outside a loop ...) only show up when compiling
+        code_obj = compile(ast.Module(body=body, type_ignores=[]), '<user>', 'exec')
+        if last_expr is not None:
+            compile(last_expr, '<user>', 'eval')
+    except (SyntaxError, ValueError, RecursionError, MemoryError) as e:
+        et = type(e).__name__
+        return result(ok=False, error={'type': et, 'msg': getattr(e, 'msg', None) or str(e), 'line': getattr(e, 'lineno', None), 'hint': HINTS.get(et, HINTS['SyntaxError'])})
     g = {'__name__': '__main__', 'input': fake_input}
     last_val = None
     err = None
@@ -800,18 +827,23 @@ def run(code, stdin_text):
             tb = tb.tb_next
         et = type(e).__name__
         err = {'type': et, 'msg': str(e), 'line': line, 'hint': HINTS.get(et, '')}
-        for rec in reversed(steps):
-            if rec.get('exc'):
+        for rec in reversed(steps):                # mark the step that really raised the uncaught error (not an earlier handled one)
+            if rec.get('exc') and rec.get('line') == line:
                 rec['fatal'] = True
                 break
         else:
-            if steps:
-                steps[-1]['exc'] = f"{et}: {e}"
-                steps[-1]['fatal'] = True
+            last = steps[-1] if steps else None
+            if last and last.get('line') == line and last['kind'] == 'line':
+                last['exc'] = f"{et}: {e}"
+                last['fatal'] = True
     finally:
         sys.settrace(None)
         sys.stdout, sys.stderr = old_o, old_e
 
+    if err is None and steps:
+        end_vars = snap(g)
+        steps.append({'kind': 'end', 'line': None, 'fn': '<module>', 'src': '', 'stack': ['<module>'], 'before': end_vars, 'after': end_vars,
+                      'frames': [{'name': 'Global frame', 'vars': end_vars, 'cur': True}]})
     for rec in steps:
         if 'after' not in rec:
             rec['after'] = rec['before']

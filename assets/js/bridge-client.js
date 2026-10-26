@@ -8,7 +8,7 @@ export async function detect() {
   if (!location.protocol.startsWith('http') || !['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname)) return null;
   try {
     const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 2500);
+    const t = setTimeout(() => ctl.abort(), 8000);                       // loopback answers instantly; this only guards a hung server
     const r = await fetch(new URL('../api/session', location.href), { cache: 'no-store', signal: ctl.signal });
     clearTimeout(t);
     if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) return null;

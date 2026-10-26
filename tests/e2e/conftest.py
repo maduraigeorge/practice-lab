@@ -67,6 +67,8 @@ def page(context):
     pg = context.new_page()
     pg.errors = []
     pg.on('pageerror', lambda e: pg.errors.append(str(e)))
+    pg.console = []
+    pg.on('console', lambda m: pg.console.append(f'{m.type}: {m.text}'[:300]))
     pg.add_init_script("window.__csp=[];document.addEventListener('securitypolicyviolation',e=>window.__csp.push([e.violatedDirective,e.sourceFile,e.lineNumber]));")
     yield pg
     pg.close()
