@@ -115,13 +115,14 @@ async function applyDDL(ddl) {
   setConn(); renderSchema(); refreshHighlights();
 }
 
-function setStatus(t, cls) { const s = $('status'); s.textContent = t; s.className = 'status ' + (cls || ''); }
+function setStatus(t, cls) { const s = $('status'); s.textContent = t; s.title = t; s.className = 'status ' + (cls || ''); }
 function setConn() {
   const c = $('conn'), commit = S.kind === 'live' && $('mode').value === 'commit';
   c.className = 'chip ' + (S.kind === 'live' ? 'live' : S.kind === 'sandbox' ? 'sand' : '') + (commit ? ' danger' : '');
-  $('connTxt').textContent = S.kind === 'live' ? `${S.dbType === 'mysql' ? 'MySQL' : 'PostgreSQL'} · ${S.label}` : S.kind === 'sandbox' ? `Sandbox · ${S.schema.tables.length} tables (browser SQLite)` : 'Not connected – click to choose';
+  $('connTxt').textContent = S.kind === 'live' ? `${S.dbType === 'mysql' ? 'MySQL' : 'PostgreSQL'} · ${S.label}` : S.kind === 'sandbox' ? `Sandbox · ${S.schema.tables.length} tables` : 'Not connected – click to choose';
   show($('mode'), S.kind === 'live');
   show($('disc'), S.kind === 'live');
+  c.title = S.kind === 'sandbox' ? 'Database: a SQLite database that lives in this browser tab – click to change (connect, upload, create)' : 'Database – click to change';
   $('schemaMeta').textContent = S.schema.tables.length ? `${S.schema.tables.length} tables` : '';
   show($('examples'), S.kind === 'sandbox' && store.get('sqlLab.sample', '') === '1');
 }

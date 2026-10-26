@@ -38,7 +38,7 @@ function startWorker() {
   };
   worker.onerror = e => setStatus('Worker error: ' + (e.message || 'could not start') + ' (open this page through http(s), not file://)', 'err');
 }
-function setStatus(t, cls) { const s = $('status'); s.textContent = t; s.className = 'status ' + (cls || ''); }
+function setStatus(t, cls) { const s = $('status'); s.textContent = t; s.title = t; s.className = 'status ' + (cls || ''); }
 
 function schedule(ms = 450) { clearTimeout(debounceT); debounceT = setTimeout(requestRun, ms); }
 function requestRun() { if (!ready) return; if (busy) { dirty = true; return; } send(); }

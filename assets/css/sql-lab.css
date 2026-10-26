@@ -115,7 +115,7 @@ h3 { margin:14px 0 6px; font-size:13px; }
 
 /* database badge: the one entry point to the setup dialog */
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; min-height: 26px; border-radius: 99px; background: var(--chip); color: var(--text);
-  font: 600 12px/1 var(--font-text); text-transform: none; letter-spacing: 0; border: 2px solid var(--border); box-shadow: 0 2px 0 var(--ledge); max-width: 46vw; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  font: 600 12px/1 var(--font-text); text-transform: none; letter-spacing: 0; border: 2px solid var(--border); box-shadow: 0 2px 0 var(--ledge); max-width: 260px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .chip:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
 .chip::after { content: "▾"; color: var(--muted); font-size: 10px; }
 .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; flex: none; }
@@ -133,3 +133,8 @@ h3 { margin:14px 0 6px; font-size:13px; }
 .how .full { width: 100%; margin-bottom: 6px; }
 #d-schema > textarea#ddl { height: 150px; }
 .neg { color: var(--bad); }
+
+/* the SQL header carries the most controls: shrink the flexible ones before anything wraps */
+@media (max-width: 1280px) { #examples { max-width: 130px; } .chip { max-width: 200px; } .status { max-width: 130px; } }
+@media (max-width: 1150px) { #examples { max-width: 104px; } .chip { max-width: 160px; } .status { max-width: 84px; } }
+@media (min-width: 901px) and (max-width: 990px) { #examples { max-width: 84px; } .chip { max-width: 112px; } .status { max-width: 56px; } #layoutSel { max-width: 84px; } }

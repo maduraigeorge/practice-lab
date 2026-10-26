@@ -13,7 +13,7 @@ const LH = 20, PAD = 8;
 const S = { program: null, chart: null, els: null, result: null, steps: [], stepEdges: [], idx: 0, playT: null, scale: 1, auto: true,
             goal: null, hintShown: false, err: null, nodeText: new Map(), varNames: [], debounce: null, charW: 8 };
 
-function setStatus(t, cls) { const s = $('status'); s.textContent = t; s.className = 'status ' + (cls || ''); }
+function setStatus(t, cls) { const s = $('status'); s.textContent = t; s.title = t; s.className = 'status ' + (cls || ''); }
 
 /* ================================================================== run everything */
 function recompute() {
