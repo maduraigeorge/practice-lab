@@ -39,8 +39,34 @@ export function initTabs(map, onChange) {
     nav.querySelectorAll('button').forEach(b => { const v = shown.has(b.dataset.t); b.classList.toggle('on', v); b.setAttribute('aria-pressed', String(v)); });
     main.dataset.count = shown.size;
     store.set(key, JSON.stringify([...shown]));
+    placeGutters();
     if (onChange) changed.forEach(t => onChange(t));
   }
+  /* drag the bars between the visible boxes to resize them */
+  const main = document.querySelector('main');
+  function placeGutters() {
+    main.querySelectorAll('.tab-gut').forEach(g => g.remove());
+    const vis = Object.values(map).map($).filter(p => p.classList.contains('tab-on'));
+    vis.forEach((p, i) => {
+      if (!i) return;
+      const a = vis[i - 1], g = document.createElement('div');
+      g.className = 'tab-gut'; g.title = 'Drag to resize · double-click to share the space equally'; g.setAttribute('aria-hidden', 'true');
+      g.addEventListener('pointerdown', e => {
+        e.preventDefault(); g.setPointerCapture(e.pointerId); g.classList.add('on');
+        const row = getComputedStyle(main).flexDirection === 'row', size = x => x.getBoundingClientRect()[row ? 'width' : 'height'];
+        const sa = size(a), sb = size(p), tot = sa + sb, start = row ? e.clientX : e.clientY, min = Math.min(60, tot / 3);
+        const move = ev => {
+          const d = Math.max(min - sa, Math.min(sb - min, (row ? ev.clientX : ev.clientY) - start));
+          a.style.flex = `${(sa + d) / tot} 1 0`; p.style.flex = `${(sb - d) / tot} 1 0`;
+        };
+        const up = () => { g.classList.remove('on'); g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up); };
+        g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
+      });
+      g.addEventListener('dblclick', () => vis.forEach(x => { x.style.flex = ''; }));
+      p.before(g);
+    });
+  }
+  matchMedia('(max-width:900px)').addEventListener('change', () => setTimeout(placeGutters, 0));
   nav.querySelectorAll('button').forEach(b => {
     b.title = 'Tap to show or hide · double-tap to show only this box';
     b.onclick = () => {
