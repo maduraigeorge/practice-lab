@@ -149,6 +149,7 @@ main { display: grid; gap: 8px; padding: 0 8px 10px; flex: 1; min-height: 0; }
   main { display: flex; flex-direction: column; gap: 6px; padding: 0 6px 6px; position: relative; }
   .panel { display: none; }
   .panel.tab-on { display: flex; flex: 1 1 0; }
+  main:not(:has(.tab-on)) #p-code { display: flex; flex: 1 1 0; }          /* never a blank screen, even if the script has not run */
   #tabs { display: flex; flex: none; gap: 4px; padding: 4px 6px calc(4px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 2px solid var(--border); }
   #tabs button { flex: 1; border: 0; border-radius: 12px; background: none; box-shadow: none; padding: 4px 2px; font: 700 10.5px/1.1 var(--font-title); color: var(--muted); display: flex;
     flex-direction: column; align-items: center; position: relative; min-height: 44px; text-transform: none; letter-spacing: 0; }
