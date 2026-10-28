@@ -1,7 +1,8 @@
 /* Flowchart & pseudocode lab: editor, live flowchart, step player, variables / trace table, practice checker. */
-import { $, esc, md, store, initTabs, installErrorHandlers, measureChar, mountLabNav, initPopover, toast } from './shared.js';
+import { indentKey, pyNextIndent, $, esc, md, store, initTabs, installErrorHandlers, measureChar, mountLabNav, initPopover, toast } from './shared.js';
 import { initDock } from './dock.js';
 import { parse, PseudoError, KEYWORDS, FUNCTIONS } from './pseudo-parser.js';
+import { pythonToPseudo, looksLikePython } from './python-to-pseudo.js';
 import { buildChart, renderChart, paintChart, pathEdges } from './pseudo-flow.js';
 import { run, parseInputs, fmtVal } from './pseudo-run.js';
 import { EXAMPLES, PRACTICE, checkOutput } from './flow-exercises.js';
@@ -19,10 +20,12 @@ function setStatus(t, cls) { const s = $('status'); s.textContent = t; s.title =
 function recompute() {
   const src = $('code').value;
   S.err = null;
-  if (!src.trim()) { reset(); setStatus('Write some pseudocode', ''); return; }
+  if (!src.trim()) { reset(); $('lang').textContent = 'Pseudocode'; setStatus('Write some pseudocode or Python', ''); return; }
   let program;
-  try { program = parse(src); } catch (e) {
-    if (!(e instanceof PseudoError)) { console.error(e); e = new PseudoError('Something unexpected went wrong while reading this pseudocode (is it extremely large or deeply nested?).', null); }
+  const py = looksLikePython(src);
+  $('lang').textContent = py ? '🐍 Python' : 'Pseudocode';
+  try { program = parse(py ? pythonToPseudo(src) : src); } catch (e) {
+    if (!(e instanceof PseudoError)) { console.error(e); e = new PseudoError('Something unexpected went wrong while reading this code (is it extremely large or deeply nested?).', null); }
     S.err = { message: e.message, line: e.line, kind: 'syntax' };
     $('chart').classList.add('stale');
     renderOutput(); markError(); setStatus(`✗ Syntax error${e.line ? ' on line ' + e.line : ''}`, 'err'); $('tabOut').classList.add('dot');
@@ -320,12 +323,14 @@ $('code').addEventListener('keydown', e => {
   }
   const leave = escTab; if (e.key !== 'Tab' && e.key !== 'Shift') escTab = false;
   if (e.key === 'Escape') { escTab = true; return; }
-  if (e.key === 'Tab' && !e.shiftKey && !leave) { e.preventDefault(); ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end'); onEdit(); }
+  const py = looksLikePython(ta.value);
+  if (e.key === 'Tab' && !leave) { e.preventDefault(); indentKey(ta, e, py ? 4 : 2); onEdit(); }
   else if (e.key === 'Enter') {
     e.preventDefault();
     const pos = ta.selectionStart, line = ta.value.slice(0, pos).split('\n').pop();
     let ind = line.match(/^\s*/)[0];
-    if (/^\s*(ELSE|REPEAT)\b|\b(THEN|DO)\s*$|^\s*(FOR|WHILE)\b/i.test(line) && !/^\s*(ENDIF|ENDWHILE|ENDFOR)/i.test(line)) ind += '  ';
+    if (py) ind = pyNextIndent(line);
+    else if (/^\s*(ELSE|REPEAT)\b|\b(THEN|DO)\s*$|^\s*(FOR|WHILE)\b/i.test(line) && !/^\s*(ENDIF|ENDWHILE|ENDFOR)/i.test(line)) ind += '  ';
     ta.setRangeText('\n' + ind, pos, ta.selectionEnd, 'end'); onEdit();
   }
 });
@@ -344,7 +349,7 @@ sel.onchange = () => {
 };
 $('reset').onclick = () => { $('code').value = ''; $('inputs').value = ''; S.goal = null; sel.value = ''; onEdit(); $('code').focus(); };
 
-initTabs({ code: 'p-code', flow: 'p-flow', steps: 'p-steps', visual: 'p-visual', output: 'p-output' }, t => {
+const setTab = initTabs({ code: 'p-code', flow: 'p-flow', steps: 'p-steps', visual: 'p-visual', output: 'p-output' }, t => {
   if (t === 'code') syncScroll();
   if (t === 'flow') { if (S.auto) fitWidth(); centerOn(S.steps[S.idx] && S.steps[S.idx].node); }
 });

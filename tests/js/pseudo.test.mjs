@@ -6,8 +6,9 @@ import { parse, tokenizeLine, exprText, PseudoError } from '../../assets/js/pseu
 import { buildChart, pathEdges } from '../../assets/js/pseudo-flow.js';
 import { run, parseInputs } from '../../assets/js/pseudo-run.js';
 import { EXAMPLES, PRACTICE, checkOutput } from '../../assets/js/flow-exercises.js';
+import { pythonToPseudo, looksLikePython } from '../../assets/js/python-to-pseudo.js';
 
-const go = (src, input = '') => { const p = parse(src); buildChart(p); return run(p, { inputs: parseInputs(input) }); };
+const go = (src, input = '') => { const p = parse(looksLikePython(src) ? pythonToPseudo(src) : src); buildChart(p); return run(p, { inputs: parseInputs(input) }); };
 const out = (src, input) => go(src, input).output.trim().split('\n').join(' | ');
 const syntaxError = src => { try { parse(src); } catch (e) { return e; } return null; };
 
@@ -153,5 +154,25 @@ test('every practice solution passes all of its tests (and the starter does not)
     }
     const starter = go(ex.starter || '', ex.tests[0].input);
     assert.ok(!checkOutput(starter.output, ex.tests[0].expected), `${ex.title}: starter already passes`);
+  }
+});
+
+/* ------------------------------------------------------------ Python in the flowchart */
+test('python: input, range loop, if / elif / else, print', () => {
+  assert.equal(out('n = int(input())\ntotal = 0\nfor i in range(1, n + 1):\n    total += i\nprint("Sum is", total)\n', '4'), 'Sum is 10');
+  const g = 'm = int(input())\nif m >= 90:\n    print("A")\nelif m >= 60:\n    print("B")\nelse:\n    print("C")\n';
+  assert.equal(out(g, '95'), 'A'); assert.equal(out(g, '70'), 'B'); assert.equal(out(g, '10'), 'C');
+});
+test('python: // and % , while, append, descending range', () => {
+  assert.equal(out('n = 7\nwhile n != 1:\n    if n % 2 == 0:\n        n = n // 2\n    else:\n        n = 3 * n + 1\n    print(n)\n'), '22 | 11 | 34 | 17 | 52 | 26 | 13 | 40 | 20 | 10 | 5 | 16 | 8 | 4 | 2 | 1');
+  assert.equal(out('xs = []\nfor i in range(10, 0, -4):\n    xs.append(i)\nprint(len(xs), xs[2])\n'), '3 2');
+});
+test('python: statements keep their own line numbers', () => {
+  const p = parse(pythonToPseudo('x = 1\n\nif x > 0:\n    print("hi")\n'));
+  assert.equal(p.find(s => s.type === 'if').line, 3);
+});
+test('python: unsupported code gets a friendly error with the right line', () => {
+  for (const [src, line] of [['x = 1\ndef f():\n    pass\n', 2], ['x = 1\nprint(f"a{x}")\n', 2], ['if x: y = 1\n', 1], ['while True:\n    break\n', 2]]) {
+    try { pythonToPseudo(src); assert.fail('should throw'); } catch (e) { assert.ok(e instanceof PseudoError); assert.equal(e.line, line); }
   }
 });

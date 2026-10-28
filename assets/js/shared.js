@@ -25,18 +25,32 @@ export function toast(title, sub = '', ms = 9000) {
   t.onclick = () => { t.style.display = 'none'; };
 }
 
-/** Phone layout: show one box at a time. `map` is { tabName: panelId }. */
+/** Narrow-screen layout: the tab bar toggles boxes on and off, and every box that is on shares the screen (stacked, or side by side
+ *  in landscape). Code + Output start on because they matter most; at least one box always stays on; double-tap a tab to show only that box.
+ *  `map` is { tabName: panelId }. */
 export function initTabs(map, onChange) {
-  const nav = $('tabs'), main = document.querySelector('main');
-  function setTab(t) {
-    main.dataset.tab = t;
-    for (const [name, id] of Object.entries(map)) $(id).classList.toggle('tab-on', name === t);
-    nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
-    if (onChange) onChange(t);
+  const nav = $('tabs'), main = document.querySelector('main'), names = Object.keys(map), key = 'tabs.' + location.pathname.split('/').pop();
+  let on = [];
+  try { on = JSON.parse(store.get(key, '[]')).filter(n => names.includes(n)); } catch { /* fall back to the default */ }
+  if (!on.length) on = ['code', 'output'].filter(n => names.includes(n));
+  const shown = new Set(on);
+  function apply(changed) {
+    for (const [name, id] of Object.entries(map)) $(id).classList.toggle('tab-on', shown.has(name));
+    nav.querySelectorAll('button').forEach(b => { const v = shown.has(b.dataset.t); b.classList.toggle('on', v); b.setAttribute('aria-pressed', String(v)); });
+    main.dataset.count = shown.size;
+    store.set(key, JSON.stringify([...shown]));
+    if (onChange) changed.forEach(t => onChange(t));
   }
-  nav.querySelectorAll('button').forEach(b => { b.onclick = () => setTab(b.dataset.t); });
-  setTab(Object.keys(map)[0]);
-  return setTab;
+  nav.querySelectorAll('button').forEach(b => {
+    b.title = 'Tap to show or hide · double-tap to show only this box';
+    b.onclick = () => {
+      const t = b.dataset.t;
+      if (shown.has(t)) { if (shown.size === 1) return; shown.delete(t); apply([]); } else { shown.add(t); apply([t]); }
+    };
+    b.ondblclick = () => { const t = b.dataset.t; shown.clear(); shown.add(t); apply([t]); };
+  });
+  apply([...shown]);
+  return t => { shown.add(t); apply([t]); };
 }
 
 
@@ -90,4 +104,25 @@ export function initPopover(button, pop) {
   document.addEventListener('click', close);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
   return close;
+}
+
+/* ---- editor indentation (Tab / Shift+Tab / Enter) shared by the code editors ---- */
+/** Indent for a new line after `line`. `python` adds one level after a trailing ":" and takes one back after pass / break / continue / return. */
+export function pyNextIndent(line, w = 4) {
+  const ind = line.match(/^[ \t]*/)[0], code = line.replace(/\s+#[^"']*$/, '');
+  if (/:\s*$/.test(code)) return ind + ' '.repeat(w);
+  if (/^\s*(pass|break|continue|return)\b/.test(code)) return ind.slice(0, Math.max(0, ind.length - w));
+  return ind;
+}
+/** Tab indents (to the next multiple of `w`, or every selected line); Shift+Tab outdents. Returns true when the key was handled. */
+export function indentKey(ta, e, w) {
+  const { selectionStart: a, selectionEnd: b, value: v } = ta, multi = v.slice(a, b).includes('\n');
+  const ls = v.lastIndexOf('\n', a - 1) + 1;
+  if (!e.shiftKey && !multi) { ta.setRangeText(' '.repeat(w - ((a - ls) % w)), a, b, 'end'); return true; }
+  let le = v.indexOf('\n', b > a && v[b - 1] === '\n' ? b - 1 : b); if (le < 0) le = v.length;
+  const lines = v.slice(ls, le).split('\n');
+  const out = lines.map(l => e.shiftKey ? l.replace(new RegExp(`^( {1,${w}}|\t)`), '') : ' '.repeat(w) + l);
+  ta.setRangeText(out.join('\n'), ls, le, 'select');
+  ta.setSelectionRange(ls, ls + out.join('\n').length);
+  return true;
 }

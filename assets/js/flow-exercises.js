@@ -3,6 +3,33 @@
  * must equal `expected` (split on whitespace). */
 
 export const EXAMPLES = [
+  { id: 'py-sum', title: 'Python: sum of 1 to N', input: '10', code:
+`n = int(input())
+total = 0
+for i in range(1, n + 1):
+    total += i
+print("Sum is", total)
+` },
+  { id: 'py-grade', title: 'Python: if / elif / else', input: '72', code:
+`marks = int(input())
+if marks >= 90:
+    print("Grade A")
+elif marks >= 60:
+    print("Grade B")
+else:
+    print("Try again")
+` },
+  { id: 'py-while', title: 'Python: while loop', input: '27', code:
+`n = int(input())
+steps = 0
+while n != 1:
+    if n % 2 == 0:
+        n = n // 2
+    else:
+        n = 3 * n + 1
+    steps += 1
+print("Steps:", steps)
+` },
   { id: 'hello', title: 'Hello & a little maths', input: '', code:
 `// Statements run top to bottom
 BEGIN

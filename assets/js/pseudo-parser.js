@@ -61,10 +61,12 @@ export const KEYWORDS = ['BEGIN', 'END', 'INPUT', 'OUTPUT', 'PRINT', 'IF', 'THEN
   'TO', 'STEP', 'IN', 'ENDFOR', 'REPEAT', 'UNTIL', 'AND', 'OR', 'NOT', 'MOD', 'DIV', 'TRUE', 'FALSE', 'APPEND'];
 export const FUNCTIONS = ['LEN', 'ABS', 'SQRT', 'FLOOR', 'CEIL', 'ROUND', 'MIN', 'MAX', 'SUM', 'UPPER', 'LOWER', 'STR', 'INT', 'FLOAT', 'SUBSTR', 'APPEND'];
 
+/** `source` is the text, or – for translated code – an array of { text, line, src } so statements keep the line numbers (and the
+ *  original wording, `src`) of what the user actually typed. */
 export function parse(source) {
-  const raw = source.split('\n');
+  const raw = Array.isArray(source) ? source : source.split('\n').map((text, i) => ({ text, line: i + 1 }));
   const lines = [];                                              // { toks, line, text }
-  raw.forEach((text, i) => { const toks = tokenizeLine(text, i + 1); if (toks.length) lines.push({ toks, line: i + 1, text: text.trim() }); });
+  raw.forEach(r => { const toks = tokenizeLine(r.text, r.line); if (toks.length) lines.push({ toks, line: r.line, text: (r.src ?? r.text).trim() }); });
   let p = 0;
 
   const err = (msg, line) => { throw new PseudoError(msg, line); };

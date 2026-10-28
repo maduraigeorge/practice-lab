@@ -1,5 +1,5 @@
 /* Python lab: editor, worker control, step player and renderers. */
-import { $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, initPopover } from './shared.js';
+import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, initPopover } from './shared.js';
 import { initDock } from './dock.js';
 
 const LH = 20, PAD = 8;
@@ -338,15 +338,11 @@ $('code').addEventListener('keydown', e => {
   }
   const leave = escTab; if (e.key !== 'Tab' && e.key !== 'Shift') escTab = false;
   if (e.key === 'Escape') { escTab = true; return; }
-  if (e.key === 'Tab' && !e.shiftKey && !leave) {
-    e.preventDefault(); ta.setRangeText('    ', ta.selectionStart, ta.selectionEnd, 'end'); onEdit();
-  } else if (e.key === 'Enter') {
+  if (e.key === 'Tab' && !leave) { e.preventDefault(); indentKey(ta, e, 4); onEdit(); }
+  else if (e.key === 'Enter') {
     e.preventDefault();
-    const pos = ta.selectionStart, before = ta.value.slice(0, pos);
-    const line = before.slice(before.lastIndexOf('\n') + 1);
-    let ind = line.match(/^\s*/)[0];
-    if (/:\s*$/.test(line)) ind += '    ';
-    ta.setRangeText('\n' + ind, pos, ta.selectionEnd, 'end'); onEdit();
+    const pos = ta.selectionStart, line = ta.value.slice(0, pos).split('\n').pop();
+    ta.setRangeText('\n' + pyNextIndent(line), pos, ta.selectionEnd, 'end'); onEdit();
   }
 });
 

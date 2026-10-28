@@ -134,7 +134,7 @@ main { display: grid; gap: 8px; padding: 0 8px 10px; flex: 1; min-height: 0; }
 @media (max-width: 1240px) { .brand em { display: none; } .status { max-width: 220px; } }
 @media (max-width: 1100px) { .labnav a span { display: none; } .labnav a { padding: 5px 10px 4px; font-size: 14px; } .status { max-width: 150px; } #layoutSel { max-width: 104px; } header select { max-width: 150px; } }
 
-/* ---- phone layout: one box at a time + bottom tab bar ---- */
+/* ---- narrow layout: the bottom tab bar toggles boxes; every box that is on shares the screen ---- */
 #tabs { display: none; }
 @media (max-width: 900px) {
   header { padding-left: 8px; padding-right: 8px; gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
@@ -145,9 +145,9 @@ main { display: grid; gap: 8px; padding: 0 8px 10px; flex: 1; min-height: 0; }
   .popover { position: fixed; top: 46px; right: 8px; }          /* the header scrolls sideways here, so the popover must escape it */
   .labnav a span { display: none; }
   .labnav a { padding: 6px 10px 5px; font-size: 14px; }
-  main { display: block; padding: 0 6px 6px; position: relative; }
-  .panel { display: none; height: 100%; }
-  .panel.tab-on { display: flex; }
+  main { display: flex; flex-direction: column; gap: 6px; padding: 0 6px 6px; position: relative; }
+  .panel { display: none; }
+  .panel.tab-on { display: flex; flex: 1 1 0; }
   #tabs { display: flex; flex: none; gap: 4px; padding: 4px 6px calc(4px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 2px solid var(--border); }
   #tabs button { flex: 1; border: 0; border-radius: 12px; background: none; box-shadow: none; padding: 4px 2px; font: 700 10.5px/1.1 var(--font-title); color: var(--muted); display: flex;
     flex-direction: column; align-items: center; position: relative; min-height: 44px; text-transform: none; letter-spacing: 0; }
@@ -162,5 +162,6 @@ main { display: grid; gap: 8px; padding: 0 8px 10px; flex: 1; min-height: 0; }
   header { min-height: 34px; padding-top: 2px; padding-bottom: 2px; }
   #tabs button { flex-direction: row; justify-content: center; gap: 4px; min-height: 34px; padding: 2px; }
 }
+@media (max-width: 900px) and (orientation: landscape) and (min-width: 560px) { main { flex-direction: row; } main > #dkhold, main > #dktray { display: none; } }
 @media (max-width: 380px) { #tabs button { font-size: 9.5px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

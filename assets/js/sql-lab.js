@@ -596,7 +596,7 @@ function fillExamples() {
 }
 $('examples').onchange = e => { const v = EXAMPLES[e.target.value]; if (v) { $('sql').value = v; onEdit(); schedule(0); } e.target.value = ''; };
 $('clearLog').title = 'Clear messages';
-initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visual', output: 'p-output' }, t => {
+const setTab = initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visual', output: 'p-output' }, t => {
   if (t === 'code') syncScroll();
   if (t === 'visual') { layoutEr(); drawLines(); }
 });
