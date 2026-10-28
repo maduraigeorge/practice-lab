@@ -137,12 +137,13 @@ main { display: grid; gap: 8px; padding: 0 8px 10px; flex: 1; min-height: 0; }
 /* ---- narrow layout: the bottom tab bar toggles boxes; every box that is on shares the screen ---- */
 #tabs { display: none; }
 @media (max-width: 900px) {
-  header { padding-left: 8px; padding-right: 8px; gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  header > * { flex: none; }
+  header { padding-left: 8px; padding-right: 8px; gap: 4px 6px; flex-wrap: wrap; }          /* wrap onto more rows instead of scrolling sideways */
+  header > * { flex: 0 1 auto; min-width: 0; }
+  .status { flex: 1 1 90px; }
+  header select { flex: 1 1 110px; max-width: 100%; }
   .brand, .spacer { display: none; }
-  .status { max-width: 112px; }
-  header select { max-width: 124px; }
-  .popover { position: fixed; top: 46px; right: 8px; }          /* the header scrolls sideways here, so the popover must escape it */
+  .status { max-width: none; }
+  .popover { position: fixed; top: 46px; right: 8px; }
   .labnav a span { display: none; }
   .labnav a { padding: 6px 10px 5px; font-size: 14px; }
   main { display: flex; flex-direction: column; gap: 6px; padding: 0 6px 6px; position: relative; }

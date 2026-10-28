@@ -43,7 +43,6 @@ export function initTabs(map, onChange) {
     if (onChange) changed.forEach(t => onChange(t));
   }
   /* drag the bars between the visible boxes to resize them */
-  const main = document.querySelector('main');
   function placeGutters() {
     main.querySelectorAll('.tab-gut').forEach(g => g.remove());
     const vis = Object.values(map).map($).filter(p => p.classList.contains('tab-on'));
