@@ -25,7 +25,7 @@ def test_python_lab_runs_explains_and_has_no_csp_violations(page, static_url):
     page.locator('#output', has_text='raeb eht dna ashaM').wait_for(timeout=30_000)
     page.click('#steps .step >> nth=1')
     assert 'REVERSED' in page.inner_text('#steps .step.active')
-    assert page.locator('.panel:visible').count() == 5
+    assert page.locator('.panel:visible').count() == 6
     assert csp(page) == [] and page.errors == []
 
 
@@ -43,7 +43,7 @@ def test_python_error_infinite_loop_and_big_calculation(page, static_url):
 def test_python_visual_shows_frames_objects_and_shared_references(page, static_url):
     python_ready(page, static_url)
     set_code(page, 'def f(n):\n    total = n * 2\n    return total\nnums = [4, 8]\nb = nums\nx = f(3)\n')
-    page.locator('#result tr', has_text='total').or_(page.locator('#result tr', has_text='b')).first.wait_for(timeout=30_000)
+    page.locator('#chart .fc-node.active').first.wait_for(timeout=30_000)
     page.locator('.tframe tr', has_text='x').first.wait_for(timeout=30_000)           # this program's own variable (x), not the previous example's
     assert page.locator('.tframe .tname', has_text='Global frame').count() == 1
     assert page.locator('.tobj .ty', has_text='list').count() == 1           # nums and b share ONE list object ...
@@ -53,9 +53,8 @@ def test_python_visual_shows_frames_objects_and_shared_references(page, static_u
     assert csp(page) == []
 
 
-def test_python_input_values_come_from_the_header_popover(page, static_url):
+def test_python_input_values_come_from_the_input_box(page, static_url):
     python_ready(page, static_url)
-    page.click('#stdinBtn')
     page.fill('#stdin', 'Asha')
     page.dispatch_event('#stdin', 'input')
     set_code(page, 'n = input("Name? ")\nprint("Hi", n)\n')

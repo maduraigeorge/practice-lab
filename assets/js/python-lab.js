@@ -1,5 +1,5 @@
 /* Python lab: editor, worker control, step player and renderers. */
-import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, initPopover } from './shared.js';
+import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav } from './shared.js';
 import { initDock } from './dock.js';
 import { parse } from './pseudo-parser.js';
 import { pythonToPseudo } from './python-to-pseudo.js';
@@ -8,7 +8,6 @@ import { buildChart, renderChart, paintChart, pathEdges } from './pseudo-flow.js
 const LH = 20, PAD = 8;
 let vizMode = store.get('pyLab.viz', 'tutor');
 mountLabNav('python');
-initPopover($('stdinBtn'), $('stdinPop'));
 
 const EXAMPLES = {
   'Variables & maths': { code: 'price = 250\nqty = 3\ntotal = price * qty\ndiscount = total * 0.1\nfinal = total - discount\nprint("Total:", total)\nprint("You pay:", final)\n' },
@@ -100,12 +99,12 @@ function renderFlow() {
   Object.assign(F, { chart: null, els: null, nodes: [], edges: [] });
   svg.replaceChildren();
   let chart;
-  try { chart = buildChart(parse(pythonToPseudo($('code').value))); }
+  try { chart = buildChart(parse(pythonToPseudo($('code').value, { lenient: true }))); }
   catch (e) {
     $('chartEmpty').hidden = false; $('chartEmpty').textContent = e && e.message ? e.message : 'This code cannot be drawn as a flowchart.';
     $('resMeta').textContent = 'not drawn'; return;
   }
-  $('chartEmpty').hidden = true; $('resMeta').textContent = 'click a box to jump to its step';
+  $('chartEmpty').hidden = true; $('resMeta').textContent = 'click a box to jump';
   // one chart node per Python step: match by source line (a decision wins when a line has several boxes), keep the previous box for lines without one
   const byLine = new Map();
   chart.nodes.forEach(n => { if (n.line != null && n.kind !== 'join' && (!byLine.has(n.line) || n.kind === 'decision')) byLine.set(n.line, n.id); });
@@ -408,13 +407,13 @@ document.addEventListener('keydown', e => {
 $('reset').onclick = () => { $('code').value = ''; $('stdin').value = ''; $('examples').value = ''; onEdit(); $('code').focus(); };
 
 const sel = $('examples');
-sel.innerHTML = '<option value="">Choose…</option>' + Object.keys(EXAMPLES).map(k => `<option>${esc(k)}</option>`).join('');
+sel.innerHTML = '<option value="">Examples…</option>' + Object.keys(EXAMPLES).map(k => `<option>${esc(k)}</option>`).join('');
 sel.onchange = () => {
   const ex = EXAMPLES[sel.value]; if (!ex) return;
   $('code').value = ex.code; $('stdin').value = ex.stdin || ''; onEdit();
 };
 window.addEventListener('resize', positionBands);
-initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visual', output: 'p-output' }, t => {
+initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visual', output: 'p-output', input: 'p-input' }, t => {
   if (t === 'code') { positionBands(); syncScroll(); }
   if (t === 'steps') { const a = $('steps').querySelector('.step.active'); if (a) $('steps').scrollTop = a.offsetTop - $('steps').clientHeight / 2; }
 });
@@ -428,15 +427,24 @@ initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visu
 })();
 
 /* ---------- dockable layout ---------- */
+/* Sizing by content: the editor wants width, the flowchart is tall and narrow, Steps is a list, Visual (frames + arrows) wants width,
+   Input is a few lines, Output is short unless there is an error. */
+const row = (...k) => ({ d: 'h', k }), col = (...k) => ({ d: 'v', k });
+const IO = row([1, 'p-input'], [1.5, 'p-output']);                       // input and output side by side
 initDock({
-  key: 'pyLab.dock2', def: 'Classic', panels: ['p-code', 'p-steps', 'p-visual', 'p-result', 'p-output'],
+  key: 'pyLab.dock4', def: 'Classic', panels: ['p-code', 'p-steps', 'p-visual', 'p-result', 'p-input', 'p-output'],
   presets: {
-    'Classic': { d: 'v', k: [[1.75, { d: 'h', k: [[1.05, 'p-code'], [1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual']] }]] }], [.72, { d: 'h', k: [[1.05, 'p-result'], [1, 'p-output']] }]] },
-    'Code focus': { d: 'h', k: [[2, 'p-code'], [1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual'], [.7, 'p-result'], [.7, 'p-output']] }]] },
-    'Stacked': { d: 'v', k: [[1.2, 'p-code'], [1.2, { d: 'h', k: [[1, 'p-steps'], [1, 'p-visual']] }], [.8, { d: 'h', k: [[1, 'p-result'], [1, 'p-output']] }]] },
-    'Three columns': { d: 'h', k: [[1, { d: 'v', k: [[2, 'p-code'], [1, 'p-output']] }], [1, 'p-steps'], [1, { d: 'v', k: [[1.3, 'p-visual'], [1, 'p-result']] }]] },
-    'Editor on top': { d: 'v', k: [[1, 'p-code'], [1.4, { d: 'h', k: [[1, 'p-steps'], [1, 'p-visual'], [1, { d: 'v', k: [[1, 'p-result'], [1, 'p-output']] }]] }]] },
-    'Side by side': { d: 'h', k: [[1, { d: 'v', k: [[2, 'p-code'], [1, 'p-result'], [1, 'p-output']] }], [1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual']] }]] },
+    // code + I/O on the left, tall flowchart in the middle, steps over visual on the right
+    'Classic': row([1.15, col([2.4, 'p-code'], [1, IO])], [.8, 'p-result'], [1.25, col([1, 'p-steps'], [1.15, 'p-visual'])]),
+    // big flowchart, everything else small
+    'Flowchart focus': row([1, col([2, 'p-code'], [1, IO])], [1.6, 'p-result'], [1, col([1, 'p-steps'], [1, 'p-visual'])]),
+    // follow the values: visual and steps large, flowchart beside them
+    'Trace focus': col([1.5, row([.9, 'p-code'], [.7, 'p-result'], [1.5, 'p-visual'])], [1, row([1.2, 'p-steps'], [.6, 'p-input'], [1, 'p-output'])]),
+    'Code focus': row([2, col([3, 'p-code'], [1, IO])], [1, col([1, 'p-steps'], [1, 'p-visual'], [.8, 'p-result'])]),
+    // code on top, everything else in a row below (wide screens)
+    'Editor on top': col([1, row([2.6, 'p-code'], [.7, 'p-input'], [1.3, 'p-output'])], [1.8, row([.8, 'p-result'], [1, 'p-steps'], [1.4, 'p-visual'])]),
+    // narrow windows: one tall stack
+    'Stacked': col([1.9, 'p-code'], [.5, row([1, 'p-input'], [1.4, 'p-output'])], [1.4, row([1, 'p-result'], [1, 'p-steps'])], [1.1, 'p-visual']),
   },
 });
 installErrorHandlers(setStatus);

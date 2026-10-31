@@ -5,7 +5,7 @@
  * Supported: x = expr, x += expr, a[i] = expr, input() (also wrapped in int / float / str, and a, b = map(int, input().split())),
  * print(...), if / elif / else, while, for i in range(...), for x in list, lst.append(v), pass, import (ignored), # comments.
  * Not supported (explained to the user): def, class, break, continue, try, with, f-strings, one-line blocks such as "if x: y". */
-import { PseudoError } from './pseudo-parser.js';
+import { PseudoError, parse } from './pseudo-parser.js';
 
 const STR = /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/;
 const CLOSER = { if: 'ENDIF', while: 'ENDWHILE', for: 'ENDFOR' };
@@ -41,13 +41,18 @@ function splitTop(s) {
   return out;
 }
 
-export function pythonToPseudo(source) {
-  const out = [], stack = [];                                    // stack: { ind, kind }
+/** `lenient` (used by the Python lab's flowchart): lines that cannot be drawn - bare expressions, def / class / try / with
+ *  blocks, return / break / continue, f-strings, statements the pseudocode parser rejects - are left out instead of failing. */
+export function pythonToPseudo(source, { lenient = false } = {}) {
+  const out = [], stack = [];
+  let skipInd = -1;                                              // lenient: inside a skipped block whose header had this indent                                    // stack: { ind, kind }
   const raw = source.split('\n');
   const fail = (msg, line) => { throw new PseudoError(msg, line); };
   const expr = (s, line) => {
+    if (lenient) s = s.replace(/(^|[^\w"'])[fF](?=["'])/g, '$1');
     if (s.split(STR).some((part, i) => i % 2 && /(^|[^\w])[fF]$/.test(s.split(STR)[i - 1]))) fail('f-strings are not supported in the flowchart – use print("Total:", total) instead.', line);
     if (/\blambda\b/.test(s)) fail('lambda is not supported in the flowchart.', line);
+    if (lenient) s = outsideStrings(s, x => x.replace(/([\w.]+(?:\[[^\]]*\])?)\s+(not\s+)?in\s+([\w.]+(?:\[[^\]]*\])?)/g, (_, k, n, c) => `${n ? 'NOT ' : ''}CONTAINS(${k}, ${c})`));
     return outsideStrings(s, x => x.replace(/\/\//g, ' DIV ').replace(/\bTrue\b/g, 'TRUE').replace(/\bFalse\b/g, 'FALSE'));
   };
   const isInput = rhs => {
@@ -60,6 +65,7 @@ export function pythonToPseudo(source) {
     const line = i + 1, rawText = raw[i], t = rawText.trim();
     if (!t || t.startsWith('#')) continue;
     const ind = rawText.match(/^[ \t]*/)[0].replace(/\t/g, '    ').length;
+    if (skipInd >= 0) { if (ind > skipInd) continue; skipInd = -1; }
     const word = (/^[A-Za-z_]+/.exec(t) || [''])[0], isElse = word === 'elif' || word === 'else';
     while (stack.length && stack[stack.length - 1].ind >= ind) {
       const top = stack[stack.length - 1];
@@ -67,10 +73,18 @@ export function pythonToPseudo(source) {
       out.push({ text: CLOSER[top.kind], line, src: '' }); stack.pop();
     }
     const emit = text => out.push({ text, line, src: t });
+    const simple = text => {                                     // a statement that is not a block header
+      if (lenient) { try { parse([{ text, line, src: t }]); } catch { return; } }
+      emit(text);
+    };
     const header = (kind, text) => { emit(text); stack.push({ ind, kind }); };
     const body = t.replace(/\s+#[^"']*$/, '');                   // trailing comment (when no quote follows it)
 
-    if (BAD[word] && !/^\w+\s*=[^=]/.test(body)) fail(BAD[word], line);
+    if (BAD[word] && !/^\w+\s*=[^=]/.test(body)) {
+      if (!lenient) fail(BAD[word], line);
+      if (/:$/.test(body)) skipInd = ind;                        // def / class / try / with: leave the whole block out
+      continue;
+    }
     if (/^(import|from)\s/.test(body) || body === 'pass') continue;
 
     let m;
@@ -102,18 +116,18 @@ export function pythonToPseudo(source) {
     }
 
     if ((m = /^(.+?)\s*=\s*(.+)$/.exec(body)) && !/^[=!<>]/.test(m[2]) && isInput(m[2])) {
-      emit(`INPUT ${splitTop(m[1].replace(/^\((.*)\)$/, '$1')).join(', ')}`); continue;
+      simple(`INPUT ${splitTop(m[1].replace(/^\((.*)\)$/, '$1')).join(', ')}`); continue;
     }
     if ((m = /^print\((.*)\)$/.exec(body))) {
       const args = splitTop(m[1]).filter(a => !/^(sep|end|file|flush)\s*=/.test(a));
-      emit(args.length ? `OUTPUT ${args.map(a => expr(a, line)).join(', ')}` : 'OUTPUT ""'); continue;
+      simple(args.length ? `OUTPUT ${args.map(a => expr(a, line)).join(', ')}` : 'OUTPUT ""'); continue;
     }
-    if ((m = /^(\w+)\.append\((.*)\)$/.exec(body))) { emit(`APPEND(${m[1]}, ${expr(m[2], line)})`); continue; }
+    if ((m = /^(\w+)\.append\((.*)\)$/.exec(body))) { simple(`APPEND(${m[1]}, ${expr(m[2], line)})`); continue; }
     if ((m = /^(\w+(?:\[.+\])?)\s*(\+|-|\*\*|\*|\/\/|\/|%)=\s*(.+)$/.exec(body))) {
-      const r = expr(m[3], line); emit(`${m[1]} = ${m[1]} ${m[2] === '//' ? 'DIV' : m[2]} ${/^[\w.]+$/.test(r) ? r : `(${r})`}`); continue;
+      const r = expr(m[3], line); simple(`${m[1]} = ${m[1]} ${m[2] === '//' ? 'DIV' : m[2]} ${/^[\w.]+$/.test(r) ? r : `(${r})`}`); continue;
     }
-    if ((m = /^(\w+(?:\[.+\])?)\s*=\s*(.+)$/.exec(body)) && !/^=/.test(m[2])) { emit(`${expr(m[1], line)} = ${expr(m[2], line)}`); continue; }
-    fail(`The flowchart can't draw this Python line yet: ${t}`, line);
+    if ((m = /^(\w+(?:\[.+\])?)\s*=\s*(.+)$/.exec(body)) && !/^=/.test(m[2])) { simple(`${expr(m[1], line)} = ${expr(m[2], line)}`); continue; }
+    if (!lenient) fail(`The flowchart can't draw this Python line yet: ${t}`, line);
   }
   while (stack.length) out.push({ text: CLOSER[stack.pop().kind], line: raw.length, src: '' });
   return out;

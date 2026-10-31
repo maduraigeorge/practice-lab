@@ -113,3 +113,7 @@ svg.tarrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .fc-node.active rect, .fc-node.active polygon { stroke: var(--accent-bright); stroke-width: 4; filter: drop-shadow(0 0 6px var(--accent-bright)); }
 .fc-edge.seen .fc-line { stroke: var(--accent-bright); stroke-width: 2.4; }
 .fc-edge.last .fc-line { stroke: var(--good); stroke-width: 3.4; }
+
+/* Input box (stdin for input()) */
+#p-input { --pc: var(--c-code); }
+.stdin-box { flex: 1; min-height: 0; width: 100%; border: 0; outline: 0; resize: none; background: transparent; color: var(--text); font-size: 13px; line-height: 20px; padding: 8px 10px; white-space: pre; overflow: auto; }
