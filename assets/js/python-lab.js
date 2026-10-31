@@ -432,10 +432,13 @@ initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visu
 const row = (...k) => ({ d: 'h', k }), col = (...k) => ({ d: 'v', k });
 const IO = row([1, 'p-input'], [1.5, 'p-output']);                       // input and output side by side
 initDock({
-  key: 'pyLab.dock4', def: 'Classic', panels: ['p-code', 'p-steps', 'p-visual', 'p-result', 'p-input', 'p-output'],
+  key: 'pyLab.dock5', def: innerWidth < 1150 ? 'Split screen' : 'Classic',      // half-screen windows start in the 2-column layout
+  panels: ['p-code', 'p-steps', 'p-visual', 'p-result', 'p-input', 'p-output'],
   presets: {
     // code + I/O on the left, tall flowchart in the middle, steps over visual on the right
     'Classic': row([1.15, col([2.4, 'p-code'], [1, IO])], [.8, 'p-result'], [1.25, col([1, 'p-steps'], [1.15, 'p-visual'])]),
+    // half-screen browser windows (about 900-1150 px): two columns so no box gets squeezed
+    'Split screen': row([1, col([2, 'p-code'], [1, IO])], [1.15, col([1.3, row([1, 'p-result'], [1.2, 'p-steps'])], [1, 'p-visual'])]),
     // big flowchart, everything else small
     'Flowchart focus': row([1, col([2, 'p-code'], [1, IO])], [1.6, 'p-result'], [1, col([1, 'p-steps'], [1, 'p-visual'])]),
     // follow the values: visual and steps large, flowchart beside them
