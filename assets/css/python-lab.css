@@ -117,3 +117,25 @@ svg.tarrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 /* Input box (stdin for input()) */
 #p-input { --pc: var(--c-code); }
 .stdin-box { flex: 1; min-height: 0; width: 100%; border: 0; outline: 0; resize: none; background: transparent; color: var(--text); font-size: 13px; line-height: 20px; padding: 8px 10px; white-space: pre; overflow: auto; }
+
+/* Narrow windows (Chrome split view, tablets, phones): the bottom tab bar picks the boxes. With six boxes, give each visible one a
+   usable minimum size and let the area scroll instead of squeezing everything into one screen. */
+@media (max-width: 900px) {
+  main { overflow-y: auto; overflow-x: hidden; }
+  .panel.tab-on { flex: 1 0 240px; }
+  #p-result.tab-on, #p-visual.tab-on { flex-basis: 320px; }
+  #p-input.tab-on { flex-basis: 110px; }
+  .gbar { margin: 0 6px 6px; padding: 4px 8px; gap: 5px; }
+}
+@media (min-width: 561px) and (max-width: 900px) {                 /* wide enough to keep the slider on the same row as the buttons */
+  .controls input[type=range] { order: 0; flex: 1 1 80px; }
+  .controls .count { margin-left: 0; }
+}
+@media (max-width: 900px) and (orientation: landscape) and (min-width: 560px) {
+  main { overflow-x: auto; overflow-y: hidden; }
+  .panel.tab-on, #p-result.tab-on, #p-visual.tab-on, #p-input.tab-on { flex: 1 0 260px; }
+}
+
+/* small boxes: the header hint shrinks (with …) so the minimise / maximise buttons never get pushed out */
+.panel > h2 .right { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel > h2 .wc { flex: none; }
