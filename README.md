@@ -38,7 +38,7 @@ By **[@maduraigeorge](https://github.com/maduraigeorge)** · MIT licensed · [Ch
 | | Python lab | SQL lab | Flowchart & pseudocode lab |
 |---|---|---|---|
 | **Write** | Python 3 (real CPython via WebAssembly) | SQL (SQLite in the browser) | Simple pseudocode |
-| **Live result** | final values, last expression | result grid, CSV download | – |
+| **Live result** | **Flowchart** of your code, lit up step by step (last expression value is shown in Output) | result grid, CSV download | – |
 | **Step-by-step** | every line, with plain-English notes for each expression (`s[::-1]`, `//`, `.split()`, f-strings, comprehensions …) | every clause *in the order the database runs it*, with row counts after each step | every flowchart box, with the real values substituted in (`x + 1 → 4 + 1 = 5`) |
 | **Visual** | **Frames & Objects** like Python Tutor: frames on the left, lists/dicts/functions on the right, arrows for references (so `b = a` visibly shares one list) – or plain variable cards | schema diagram – drag tables, foreign keys, highlights what your query uses | flowchart with the running box lit up and the path walked + trace table |
 | **Output** | `print()` output and friendly errors | messages, timings, errors with hints | output, errors, and practice-test results |

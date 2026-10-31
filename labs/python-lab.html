@@ -30,6 +30,17 @@
   <button id="reset" title="Clear the editor">Clear</button>
 </header>
 
+<div class="controls gbar" id="gbar" role="group" aria-label="Step controls (apply to every box)">
+  <button id="first" title="First step" aria-label="First step">⏮</button>
+  <button id="prev" title="Previous step (←)" aria-label="Previous step">◀</button>
+  <button id="play" class="primary" title="Play / pause">▶ Play</button>
+  <button id="next" title="Next step (→)" aria-label="Next step">▶</button>
+  <button id="last" title="Last step" aria-label="Last step">⏭</button>
+  <input type="range" id="slider" min="0" max="0" value="0" aria-label="Step">
+  <select id="speed" aria-label="Playback speed"><option value="1100">Slow</option><option value="600" selected>Normal</option><option value="250">Fast</option></select>
+  <span class="count" id="count">0 / 0</span>
+</div>
+
 <main>
   <section class="panel" id="p-code">
     <h2><span class="num">1</span>Code <span class="right">runs live as you type</span></h2>
@@ -44,16 +55,6 @@
 
   <section class="panel" id="p-steps">
     <h2><span class="num">3</span>Step-by-step</h2>
-    <div class="controls">
-      <button id="first" title="First step" aria-label="First step">⏮</button>
-      <button id="prev" title="Previous step (←)" aria-label="Previous step">◀</button>
-      <button id="play" class="primary" title="Play / pause">▶ Play</button>
-      <button id="next" title="Next step (→)" aria-label="Next step">▶</button>
-      <button id="last" title="Last step" aria-label="Last step">⏭</button>
-      <input type="range" id="slider" min="0" max="0" value="0" aria-label="Step">
-      <select id="speed" aria-label="Playback speed"><option value="1100">Slow</option><option value="600" selected>Normal</option><option value="250">Fast</option></select>
-      <span class="count" id="count">0 / 0</span>
-    </div>
     <div class="body" id="steps"><span class="empty">Write some code – each line that runs is explained here.</span></div>
   </section>
 
@@ -63,8 +64,8 @@
   </section>
 
   <section class="panel" id="p-result">
-    <h2><span class="num">2</span>Live result <span class="right" id="resMeta"></span></h2>
-    <div class="body" id="result"><span class="empty">Final values appear here.</span></div>
+    <h2><span class="num">2</span>Flowchart <span class="right" id="resMeta">click a box to jump to its step</span></h2>
+    <div class="body flush chart-box" id="chartBox"><svg id="chart" role="img" aria-label="Flowchart of the program"></svg><span class="empty" id="chartEmpty">The flowchart of your code appears here.</span></div>
   </section>
 
   <section class="panel" id="p-output">
@@ -75,7 +76,7 @@
 
 <nav id="tabs" aria-label="Boxes">
   <button data-t="code" class="on"><b>⌨</b>Code</button>
-  <button data-t="result"><b>✔</b>Result</button>
+  <button data-t="result"><b>⎇</b>Flow</button>
   <button data-t="steps"><b>☰</b>Steps</button>
   <button data-t="visual"><b>▦</b>Visual</button>
   <button data-t="output" id="tabOut"><b>▤</b>Output</button>

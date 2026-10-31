@@ -1,6 +1,9 @@
 /* Python lab: editor, worker control, step player and renderers. */
 import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, initPopover } from './shared.js';
 import { initDock } from './dock.js';
+import { parse } from './pseudo-parser.js';
+import { pythonToPseudo } from './python-to-pseudo.js';
+import { buildChart, renderChart, paintChart, pathEdges } from './pseudo-flow.js';
 
 const LH = 20, PAD = 8;
 let vizMode = store.get('pyLab.viz', 'tutor');
@@ -20,6 +23,7 @@ const EXAMPLES = {
 /* ---------- state ---------- */
 let worker = null, ready = false, busy = false, dirty = false, runId = 0, timeoutT = null, debounceT = null;
 let data = null, idx = 0, playT = null;
+const F = { chart: null, els: null, nodes: [], edges: [], scale: 1 };   // flowchart of the current code + the chart node shown at every step
 
 /* ---------- worker ---------- */
 function startWorker() {
@@ -70,7 +74,7 @@ function handle(d) {
   if (d.fatal) { setStatus('Internal error: ' + d.fatal, 'err'); return; }
   data = d; stopPlay();
   idx = Math.max(0, d.steps.length - 1);
-  renderOutput(); renderResult(); renderSteps(); select(idx);
+  renderOutput(); renderFlow(); renderSteps(); select(idx);
   $('tabOut').classList.toggle('dot', !d.ok);
   if (d.ok) setStatus(`✓ Ran fine · ${d.steps.length} steps${d.trunc ? ' (first ' + d.steps.length + ' shown)' : ''}`, 'ok');
   else setStatus(`✗ ${d.error.type}${d.error.line ? ' on line ' + d.error.line : ''}`, 'err');
@@ -85,19 +89,52 @@ function renderOutput() {
     h += `<div class="errbox"><b>${esc(d.error.type)}</b>${d.error.line ? ` on line ${d.error.line}` : ''}: ${esc(d.error.msg)}` +
          (d.error.hint ? `<div class="hint">💡 ${esc(d.error.hint)}</div>` : '') + '</div>';
   }
+  if (d.last) h += `<div class="lastval">Last expression value: <b class="mono">${esc(d.last.r)}</b> <span class="ty">(${esc(d.last.t)})</span></div>`;
   $('output').innerHTML = h || '<span class="empty">The program ran but printed nothing. Try print(...)</span>';
   const eb = $('bandErr');
   if (d.error && d.error.line) { eb.style.display = 'block'; positionBands(); } else eb.style.display = 'none';
 }
-function renderResult() {
-  const d = data; let h = '';
-  if (d.last) h += `<div class="lastval">Last expression value: <b class="mono">${esc(d.last.r)}</b> <span class="ty">(${esc(d.last.t)})</span></div>`;
-  const names = Object.keys(d.final).filter(n => d.final[n].k !== 'fn');
-  if (names.length) {
-    h += '<table class="res-table mono">' + names.map(n => `<tr><td>${esc(n)}</td><td>${esc(d.final[n].r)}</td><td>${esc(d.final[n].t)}</td></tr>`).join('') + '</table>';
-  } else if (!d.last) h = '<span class="empty">No variables yet. Try  x = 5</span>';
-  $('result').innerHTML = h;
-  $('resMeta').textContent = d.ok ? 'final values' : 'values before the error';
+/* ---------- flowchart ---------- */
+function renderFlow() {
+  const d = data, svg = $('chart');
+  Object.assign(F, { chart: null, els: null, nodes: [], edges: [] });
+  svg.replaceChildren();
+  let chart;
+  try { chart = buildChart(parse(pythonToPseudo($('code').value))); }
+  catch (e) {
+    $('chartEmpty').hidden = false; $('chartEmpty').textContent = e && e.message ? e.message : 'This code cannot be drawn as a flowchart.';
+    $('resMeta').textContent = 'not drawn'; return;
+  }
+  $('chartEmpty').hidden = true; $('resMeta').textContent = 'click a box to jump to its step';
+  // one chart node per Python step: match by source line (a decision wins when a line has several boxes), keep the previous box for lines without one
+  const byLine = new Map();
+  chart.nodes.forEach(n => { if (n.line != null && n.kind !== 'join' && (!byLine.has(n.line) || n.kind === 'decision')) byLine.set(n.line, n.id); });
+  let prev = chart.startId;
+  F.nodes = d.steps.map(s => (prev = s.kind === 'end' ? chart.endId : byLine.get(s.line) || prev));
+  F.edges = d.steps.map((s, i) => pathEdges(chart, i ? F.nodes[i - 1] : chart.startId, F.nodes[i]));
+  F.chart = chart; F.els = renderChart(svg, chart, gotoNode); fitFlow();
+}
+function fitFlow() {
+  const c = F.chart; if (!c) return;
+  F.scale = Math.max(0.4, Math.min(1, ($('chartBox').clientWidth - 16) / c.W));
+  $('chart').style.width = Math.round(c.W * F.scale) + 'px'; $('chart').style.height = Math.round(c.H * F.scale) + 'px';
+}
+new ResizeObserver(fitFlow).observe($('chartBox'));
+function centerOn(id) {
+  const n = F.chart && F.chart.nodes.find(x => x.id === id); if (!n) return;
+  const box = $('chartBox');
+  box.scrollTo({ top: Math.max(0, (n.y + n.h / 2) * F.scale - box.clientHeight / 2), left: 0, behavior: 'smooth' });
+}
+function gotoNode(id) {
+  const after = F.nodes.findIndex((n, i) => n === id && i >= idx), i = after >= 0 ? after : F.nodes.indexOf(id);
+  if (i >= 0) { stopPlay(); select(i); }
+}
+function paintFlow() {
+  if (!F.els) return;
+  const seenNodes = new Set([F.chart.startId]), seenEdges = new Set();
+  for (let k = 0; k <= idx; k++) { seenNodes.add(F.nodes[k]); F.edges[k].forEach(e => seenEdges.add(e)); }
+  paintChart(F.els, { activeNode: F.nodes[idx], seenNodes, seenEdges, lastEdges: new Set(F.edges[idx]) });
+  centerOn(F.nodes[idx]);
 }
 function renderSteps() {
   const box = $('steps'), st = data.steps;
@@ -124,7 +161,7 @@ function select(i) {
   }
   $('slider').value = idx;
   $('count').textContent = `${idx + 1} / ${st.length}`;
-  renderVisual(st[idx]); positionBands(); updateBtns();
+  renderVisual(st[idx]); paintFlow(); positionBands(); updateBtns();
 }
 function updateBtns() {
   const n = data ? data.steps.length : 0;

@@ -86,3 +86,30 @@ pre.out { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 1
 svg.tarrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 2; }
 .tarrow { fill: none; stroke: var(--accent-bright); stroke-width: 1.8; }
 .tarrowhead { fill: var(--accent-bright); }
+
+/* global step bar (sits above every box) */
+.gbar { flex: none; margin: 0 8px 6px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: var(--shadow); }
+
+/* Flowchart box (same look as the Flowchart lab) */
+.chart-box { position: relative; background: var(--code-bg); }
+#chart { display: block; margin: 0 auto; }
+#chart.stale { opacity: .35; }
+#chartEmpty { position: absolute; inset: 0; display: grid; place-items: center; padding: 12px; text-align: center; }
+#chartEmpty[hidden] { display: none; }
+.fc-line { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.fc-arrowhead { fill: var(--muted); }
+.fc-label { font: 700 11px var(--font-title); fill: var(--muted); }
+.fc-text { font: 600 12px var(--font-text); fill: var(--text); text-anchor: middle; pointer-events: none; }
+.fc-node { cursor: pointer; outline: none; }
+.fc-node rect, .fc-node polygon { stroke-width: 2; transition: stroke-width .15s, filter .15s; }
+.fc-node.process rect { fill: color-mix(in srgb, var(--c-trace) 17%, var(--panel)); stroke: var(--c-trace); }
+.fc-node.io polygon { fill: color-mix(in srgb, var(--c-visual) 15%, var(--panel)); stroke: var(--c-visual); }
+.fc-node.decision polygon { fill: color-mix(in srgb, var(--c-steps) 20%, var(--panel)); stroke: var(--c-steps); }
+.fc-node.start rect { fill: color-mix(in srgb, var(--c-result) 22%, var(--panel)); stroke: var(--c-result); }
+.fc-node.end rect { fill: color-mix(in srgb, var(--bad) 18%, var(--panel)); stroke: var(--bad); }
+.fc-node.join circle { fill: var(--muted); }
+.fc-node:hover rect, .fc-node:hover polygon, .fc-node:focus-visible rect, .fc-node:focus-visible polygon { stroke-width: 3; }
+.fc-node.seen rect, .fc-node.seen polygon { stroke-width: 3; }
+.fc-node.active rect, .fc-node.active polygon { stroke: var(--accent-bright); stroke-width: 4; filter: drop-shadow(0 0 6px var(--accent-bright)); }
+.fc-edge.seen .fc-line { stroke: var(--accent-bright); stroke-width: 2.4; }
+.fc-edge.last .fc-line { stroke: var(--good); stroke-width: 3.4; }

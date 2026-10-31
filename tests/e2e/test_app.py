@@ -232,7 +232,7 @@ def test_dock_presets_minimise_and_persistence(page, static_url):
     boxes = page.evaluate("[...document.querySelectorAll('.panel')].map(p => { const r = p.getBoundingClientRect(); return [r.width, r.height]; })")
     assert all(w > 80 and h > 60 for w, h in boxes)
     page.click('#p-result [data-a=min]')
-    assert not page.locator('#p-result').is_visible() and 'live result' in page.inner_text('#dktray').lower()
+    assert not page.locator('#p-result').is_visible() and 'flowchart' in page.inner_text('#dktray').lower()
     page.reload()
     page.locator('#status.ok').wait_for(timeout=120_000)
     assert not page.locator('#p-result').is_visible()                 # layout is remembered
