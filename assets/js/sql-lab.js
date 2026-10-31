@@ -3,6 +3,7 @@ import { $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, 
 import { initDock } from './dock.js';
 import { maskSQL, splitStatements, analyze, KW, FUNCS } from './sql-parse.js';
 import { prepareImport } from './sql-import.js';
+import { buildER } from './sql-er.js';
 import { SqliteClient, SqliteTimeout } from './sqlite-client.js';
 import { detect as detectBridge, hasBridge, bridgeInfo, api } from './bridge-client.js';
 
@@ -411,6 +412,8 @@ $('counts').onchange = () => { analyzeNow(); if (S.result && S.result.ok) fillCo
 
 /* ================= schema diagram ================= */
 const posStore = {};
+let erMode = store.get('sqlLab.viz', 'tables') === 'er';        // Tables (physical schema) or ER (entities + relationships)
+const posKey = n => (erMode ? 'er|' : 't|') + n;
 let usedT = new Set(), usedC = new Set();
 function usedNames() {
   const text = currentSQL() || $('sql').value;
@@ -433,43 +436,48 @@ function refreshHighlights() {
 function renderSchema() {
   const box = $('visual'), tabs = S.schema.tables;
   if (!tabs.length) { box.innerHTML = '<span class="empty">' + (S.kind === 'none' ? 'Connect to a database or load a sandbox to see its tables.' : 'No tables found in this database.') + '</span>'; return; }
-  box.innerHTML = '<div class="legend">Drag tables to move · highlighted = used by your query · double-click to query</div><div class="er" id="er"><svg id="erSvg"><defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="currentColor"/></marker></defs></svg></div>';
+  S.er = buildER(S.schema);
+  const shown = erMode ? S.er.entities : tabs;
+  const hint = erMode ? 'Drag entities · ◇ = relationship (its foreign-key column) · 1 / N = how many rows can match · highlighted = used by your query' : 'Drag tables to move · highlighted = used by your query · double-click to query';
+  box.innerHTML = `<div class="legend"><span class="vtabs"><button class="mini${erMode ? '' : ' on'}" data-v="tables" title="Tables with their foreign-key lines">Tables</button><button class="mini${erMode ? ' on' : ''}" data-v="er" title="Entity-relationship diagram">ER diagram</button></span> ${hint}</div>` + '<div class="er" id="er"><svg id="erSvg"><defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="currentColor"/></marker></defs></svg></div>';
   const er = $('er');
-  tabs.forEach(t => {
-    const el = document.createElement('div'); el.className = 'tb'; el.dataset.t = t.name;
+  box.querySelectorAll('.vtabs button').forEach(b => { b.onclick = () => { erMode = b.dataset.v === 'er'; store.set('sqlLab.viz', erMode ? 'er' : 'tables'); renderSchema(); }; });
+  shown.forEach(t => {
+    const el = document.createElement('div'); el.className = 'tb' + (erMode ? ' en' : ''); el.dataset.t = t.name;
     const fkCols = new Set(S.schema.fks.filter(f => f.from[0] === t.name).map(f => f.from[1]));
     el.innerHTML = `<div class="th" title="Double-click to query"><span>${t.view ? '👁 ' : '▦ '}${esc(t.name)}</span><em>${t.columns.length} cols</em></div>` +
-      t.columns.map(c => `<div class="cr" data-c="${esc(c.name)}"><span class="k">${c.pk ? '🔑' : fkCols.has(c.name) ? '🔗' : ''}</span><span class="mono">${esc(c.name)}</span><span class="ty">${esc(c.type)}</span></div>`).join('');
+      t.columns.map(c => `<div class="cr" data-c="${esc(c.name)}"><span class="k">${c.pk ? '🔑' : fkCols.has(c.name) ? '🔗' : ''}</span><span class="mono${c.pk ? ' pkc' : ''}">${esc(c.name)}</span><span class="ty">${esc(c.type)}</span></div>`).join('');
     er.appendChild(el);
     const th = el.querySelector('.th');
     th.ondblclick = () => { $('sql').value = `SELECT * FROM ${q(t.name)} LIMIT 20;`; onEdit(); run(true); };
     let drag = null;
     th.onpointerdown = e => { drag = { x: e.clientX - el.offsetLeft, y: e.clientY - el.offsetTop }; th.setPointerCapture(e.pointerId); th.style.cursor = 'grabbing'; };
-    th.onpointermove = e => { if (!drag) return; el.style.left = Math.max(0, e.clientX - drag.x) + 'px'; el.style.top = Math.max(0, e.clientY - drag.y) + 'px'; posStore[t.name] = [el.offsetLeft, el.offsetTop]; sizeEr(); drawLines(); };
+    th.onpointermove = e => { if (!drag) return; el.style.left = Math.max(0, e.clientX - drag.x) + 'px'; el.style.top = Math.max(0, e.clientY - drag.y) + 'px'; posStore[posKey(t.name)] = [el.offsetLeft, el.offsetTop]; sizeEr(); drawLines(); };
     th.onpointerup = () => { drag = null; th.style.cursor = ''; };
   });
   layoutEr(); refreshHighlights();
 }
 function layoutEr() {
   const er = $('er'); if (!er) return;
-  const W = 200, G = 26, cols = Math.max(1, Math.floor(($('visual').clientWidth - 24 + G) / (W + G))), heights = new Array(cols).fill(0);
+  const W = 200, G = erMode ? 110 : 26, cols = Math.max(1, Math.floor(($('visual').clientWidth - 24 + G) / (W + G))), heights = new Array(cols).fill(0);
   [...er.querySelectorAll('.tb')].forEach(el => {
-    const p = posStore[el.dataset.t];
+    const p = posStore[posKey(el.dataset.t)];
     if (p) { el.style.left = p[0] + 'px'; el.style.top = p[1] + 'px'; return; }
     const c = heights.indexOf(Math.min(...heights));
-    el.style.left = c * (W + G) + 'px'; el.style.top = heights[c] + 'px'; heights[c] += el.offsetHeight + 22;
+    el.style.left = c * (W + G) + 'px'; el.style.top = heights[c] + 'px'; heights[c] += el.offsetHeight + (erMode ? 70 : 22);
   });
   sizeEr();
 }
 function sizeEr() {
   const er = $('er'); if (!er) return; let w = 0, h = 0;
   er.querySelectorAll('.tb').forEach(el => { w = Math.max(w, el.offsetLeft + el.offsetWidth); h = Math.max(h, el.offsetTop + el.offsetHeight); });
-  er.style.height = (h + 12) + 'px'; er.style.minWidth = (w + 4) + 'px';
+  er.style.height = (h + 12) + 'px'; er.style.minWidth = (w + (erMode ? 90 : 4)) + 'px';
 }
 function drawLines() {
   const svg = $('erSvg'); if (!svg) return;
-  svg.querySelectorAll('path').forEach(p => p.remove());
+  svg.querySelectorAll('path.fkline, .erx').forEach(p => p.remove());
   const er = $('er');
+  if (erMode) return drawER(svg, er);
   S.schema.fks.forEach(f => {
     const a = er.querySelector(`.tb[data-t="${CSS.escape(f.from[0])}"]`), b = er.querySelector(`.tb[data-t="${CSS.escape(f.to[0])}"]`);
     if (!a || !b) return;
@@ -483,6 +491,40 @@ function drawLines() {
     const used = usedT.has(f.from[0]) && usedT.has(f.to[0]);
     path.setAttribute('class', 'fkline' + (used ? ' used' : '')); path.setAttribute('marker-end', 'url(#ar)'); path.style.color = used ? 'var(--accent)' : 'var(--muted)';
     svg.appendChild(path);
+  });
+}
+/* ER view: a diamond per relationship, placed between its entities, with 1 / N at each end. A link table is drawn as one N : N diamond. */
+function drawER(svg, er) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const mkE = (name, attrs, text) => { const e = document.createElementNS(NS, name); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text !== undefined) e.textContent = text; return e; };
+  const rect = c => ({ x: c.offsetLeft, y: c.offsetTop, w: c.offsetWidth, h: c.offsetHeight });
+  const toward = (r, tx, ty) => {                                   // where the line from the box centre to (tx, ty) leaves the box
+    const cx = r.x + r.w / 2, cy = r.y + r.h / 2, dx = tx - cx, dy = ty - cy;
+    if (!dx && !dy) return [cx, cy];
+    const k = Math.min(dx ? r.w / 2 / Math.abs(dx) : Infinity, dy ? r.h / 2 / Math.abs(dy) : Infinity);
+    return [cx + dx * k, cy + dy * k];
+  };
+  (S.er ? S.er.rels : []).forEach(rel => {
+    const parts = rel.parts.map(p => ({ p, c: er.querySelector(`.tb[data-t="${CSS.escape(p.entity)}"]`) })).filter(x => x.c);
+    if (parts.length < 2) return;
+    const rs = parts.map(x => rect(x.c)), self = parts.every(x => x.c === parts[0].c);
+    const cx = self ? rs[0].x + rs[0].w + 80 : rs.reduce((a, r) => a + r.x + r.w / 2, 0) / rs.length, cy = self ? rs[0].y + rs[0].h / 2 : rs.reduce((a, r) => a + r.y + r.h / 2, 0) / rs.length;
+    const label = rel.label.length > 16 ? rel.label.slice(0, 15) + '…' : rel.label, w = Math.max(76, label.length * 6.6 + 34), h = 42;
+    const used = parts.every(x => usedT.has(x.p.entity)) && (!rel.junction || usedT.has(rel.junction));
+    const g = mkE('g', { class: 'erx errel' + (used ? ' used' : '') });
+    g.appendChild(mkE('title', {}, rel.junction ? `${rel.junction} links these tables (many-to-many)` : `foreign key ${rel.label}`));
+    parts.forEach((x, i) => {
+      const r = rs[i];
+      const P = self ? [r.x + r.w, r.y + r.h / 2 + (i ? 14 : -14)] : toward(r, cx, cy);
+      const vx = P[0] - cx, vy = P[1] - cy, k = 1 / (Math.abs(vx) / (w / 2) + Math.abs(vy) / (h / 2) || 1), D = [cx + vx * k, cy + vy * k];
+      g.appendChild(mkE('path', { d: `M${P[0].toFixed(1)},${P[1].toFixed(1)} L${D[0].toFixed(1)},${D[1].toFixed(1)}`, class: 'erline' }));
+      const len = Math.hypot(D[0] - P[0], D[1] - P[1]) || 1, ux = (D[0] - P[0]) / len, uy = (D[1] - P[1]) / len;
+      g.appendChild(mkE('text', { x: (P[0] + ux * 13 - uy * 9).toFixed(1), y: (P[1] + uy * 13 + ux * 9 + 4).toFixed(1), class: 'ercard', 'text-anchor': 'middle' }, x.p.card));
+    });
+    g.appendChild(mkE('polygon', { points: `${cx - w / 2},${cy} ${cx},${cy - h / 2} ${cx + w / 2},${cy} ${cx},${cy + h / 2}`, class: 'erdia' }));
+    g.appendChild(mkE('text', { x: cx, y: cy + 4, class: 'ertxt', 'text-anchor': 'middle' }, label));
+    if (rel.attrs.length) g.appendChild(mkE('text', { x: cx, y: cy + h / 2 + 12, class: 'erattr', 'text-anchor': 'middle' }, rel.attrs.slice(0, 3).join(', ') + (rel.attrs.length > 3 ? '…' : '')));
+    svg.appendChild(g);
   });
 }
 new ResizeObserver(() => { layoutEr(); drawLines(); }).observe($('visual'));

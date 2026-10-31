@@ -138,3 +138,18 @@ h3 { margin:14px 0 6px; font-size:13px; }
 @media (max-width: 1280px) { #examples { max-width: 130px; } .chip { max-width: 200px; } .status { max-width: 130px; } }
 @media (max-width: 1150px) { #examples { max-width: 104px; } .chip { max-width: 160px; } .status { max-width: 84px; } }
 @media (min-width: 901px) and (max-width: 990px) { #examples { max-width: 84px; } .chip { max-width: 112px; } .status { max-width: 56px; } #layoutSel { max-width: 84px; } }
+
+/* Visual box: Tables / ER switch and the ER view */
+.legend .vtabs { display:inline-flex; gap:4px; margin-right:6px; vertical-align:middle; }
+.legend .vtabs .on { background:var(--accent-bright); color:#fff; border-color:var(--accent-bright); }
+.tb .cr .pkc { text-decoration:underline; font-weight:700; }
+.tb.en { border-width:2px; border-radius:4px; }
+.tb.en .th { border-radius:2px 2px 0 0; justify-content:center; }
+.tb.en .th em { display:none; }
+.erline { stroke:var(--muted); stroke-width:1.5; fill:none; }
+.erdia { fill:color-mix(in srgb, var(--c-steps) 18%, var(--panel)); stroke:var(--c-steps); stroke-width:2; }
+.ertxt { font:600 11px var(--font-text); fill:var(--text); }
+.erattr { font:italic 10.5px var(--font-text); fill:var(--muted); }
+.ercard { font:700 12px var(--font-title); fill:var(--accent); }
+.errel.used .erdia { stroke:var(--accent-bright); stroke-width:3; }
+.errel.used .erline { stroke:var(--accent-bright); stroke-width:2.2; }
