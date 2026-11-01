@@ -350,6 +350,18 @@ let debounceT = null;
 function schedule(ms = 800) { clearTimeout(debounceT); debounceT = setTimeout(() => { analyzeNow(); if ($('auto').checked && S.kind !== 'none' && isReadOnly()) run(false); }, ms); }
 const WRITE_RE = /\b(insert|update|delete|merge|replace|into|create|drop|alter|truncate|attach|detach|vacuum|reindex|grant|revoke|call|exec|copy|pragma)\b/i;
 function isReadOnly() { const t = splitStatements(currentSQL()); return t.length > 0 && t.every(st => { const m = maskSQL(st, true); return READ_RE.test(m) && !WRITE_RE.test(m); }); }
+/* Replace the editor text without losing the user's query: the old text is kept and "↩ Previous query" swaps the two back and forth. */
+let stashSQL = null;
+function setSQL(text) {
+  const cur = $('sql').value;
+  if (cur.trim() && cur !== text) { stashSQL = cur; $('restoreSql').hidden = false; }
+  $('sql').value = text; onEdit();
+}
+$('restoreSql').onclick = () => {
+  if (stashSQL === null) return;
+  const cur = $('sql').value; $('sql').value = stashSQL; stashSQL = cur; onEdit(); schedule(0);
+  $('sql').focus();
+};
 function currentSQL() { const ta = $('sql'); return ta.selectionStart !== ta.selectionEnd ? ta.value.slice(ta.selectionStart, ta.selectionEnd) : ta.value; }
 function analyzeNow() { S.lastSteps = analyze(currentSQL()); renderSteps(S.lastSteps); refreshHighlights(); }
 
@@ -449,7 +461,7 @@ function renderSchema() {
       t.columns.map(c => `<div class="cr" data-c="${esc(c.name)}"><span class="k">${c.pk ? '🔑' : fkCols.has(c.name) ? '🔗' : ''}</span><span class="mono${c.pk ? ' pkc' : ''}">${esc(c.name)}</span><span class="ty">${esc(c.type)}</span></div>`).join('');
     er.appendChild(el);
     const th = el.querySelector('.th');
-    th.ondblclick = () => { $('sql').value = `SELECT * FROM ${q(t.name)} LIMIT 20;`; onEdit(); run(true); };
+    th.ondblclick = () => { setSQL(`SELECT * FROM ${q(t.name)} LIMIT 20;`); run(true); };
     let drag = null;
     th.onpointerdown = e => { drag = { x: e.clientX - el.offsetLeft, y: e.clientY - el.offsetTop }; th.setPointerCapture(e.pointerId); th.style.cursor = 'grabbing'; };
     th.onpointermove = e => { if (!drag) return; el.style.left = Math.max(0, e.clientX - drag.x) + 'px'; el.style.top = Math.max(0, e.clientY - drag.y) + 'px'; posStore[posKey(t.name)] = [el.offsetLeft, el.offsetTop]; sizeEr(); drawLines(); };
@@ -636,7 +648,7 @@ function fillExamples() {
   sel.innerHTML = '<option value="">Sample queries…</option>' + Object.keys(EXAMPLES).map(k => `<option>${esc(k)}</option>`).join('');
   show(sel, sample && S.kind === 'sandbox');
 }
-$('examples').onchange = e => { const v = EXAMPLES[e.target.value]; if (v) { $('sql').value = v; onEdit(); schedule(0); } e.target.value = ''; };
+$('examples').onchange = e => { const v = EXAMPLES[e.target.value]; if (v) { setSQL(v); schedule(0); } e.target.value = ''; };
 $('clearLog').title = 'Clear messages';
 const setTab = initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visual', output: 'p-output' }, t => {
   if (t === 'code') syncScroll();
