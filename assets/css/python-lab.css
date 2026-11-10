@@ -154,3 +154,10 @@ svg.tarrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .sh-in { flex: 1; min-width: 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--text); font-size: 13px; line-height: 20px; padding: 0; margin: 0; overflow: hidden; white-space: pre-wrap; }
 .ac.up { top: auto; bottom: 100%; margin-bottom: 2px; }
 @media (max-width: 900px) { #p-shell.tab-on { flex-basis: 260px; } }
+
+/* signature + argument help in the shell's suggestion list */
+#shAc { min-width: 260px; max-width: min(460px, 94%); max-height: 240px; }
+#shAc div span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#shAc div span i { font-style: normal; opacity: .7; margin-left: 2px; }
+#shAc p.tip { position: sticky; bottom: -3px; margin: 3px -3px -3px; padding: 5px 10px; background: var(--panel); border-top: 2px solid var(--border); border-radius: 0 0 10px 10px; font: 500 11.5px/1.4 var(--font-text); white-space: normal; cursor: default; }
+#shAc p.tip b { font-family: var(--font-mono); font-weight: 700; color: var(--accent-bright); word-break: break-all; }

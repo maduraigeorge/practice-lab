@@ -58,8 +58,23 @@ export function initShell(api) {
     ac.style.left = Math.max(0, Math.min(prompt.offsetWidth + 6 + col * cw, $('sh').clientWidth - 220)) + 'px';
     render(); ac.style.display = 'block';
   }
+  /** "1 required + 1 optional argument", "no arguments", ... from the counts repl.py worked out. */
+  function argText(d) {
+    if (!d || d.req == null) return '';
+    const p = [];
+    if (d.req) p.push(`${d.req} required`);
+    if (d.opt) p.push(`${d.opt} optional`);
+    if (d.var) p.push('any number of extra');
+    return p.length ? p.join(' + ') + (d.req + d.opt > 1 || d.var ? ' arguments' : ' argument') : 'no arguments';
+  }
   function render() {
-    ac.innerHTML = acs.items.map(([n, k], i) => `<div class="${i === acs.i ? 'on' : ''}" data-i="${i}"><span>${esc(n)}</span><small>${esc(k)}</small></div>`).join('');
+    ac.innerHTML = acs.items.map(([n, k, d], i) => `<div class="${i === acs.i ? 'on' : ''}" data-i="${i}"><span>${esc(n)}${d && d.sig ? `<i>${esc(d.sig)}</i>` : ''}</span><small>${esc(k)}</small></div>`).join('')
+      + (() => {                                                   // help line for the highlighted item: syntax, argument count, what it does
+        const [n, , d] = acs.items[acs.i];
+        if (!d) return '';
+        const a = argText(d);
+        return `<p class="tip"><b>${esc(n + (d.sig || '(...)'))}</b>${a ? ' · ' + esc(a) : ''}${d.doc ? `<br>${esc(d.doc)}` : ''}</p>`;
+      })();
     const on = ac.querySelector('.on'); if (on) on.scrollIntoView({ block: 'nearest' });
   }
   function accept(i = acs.i) {

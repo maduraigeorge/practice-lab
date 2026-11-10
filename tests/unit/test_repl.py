@@ -20,7 +20,7 @@ def push(sh, line, stdin=''):
 
 
 def names(sh, text):
-    return [n for n, _ in json.loads(sh['complete'](text))]
+    return [item[0] for item in json.loads(sh['complete'](text))]
 
 
 def test_variables_live_between_lines(sh):
@@ -80,3 +80,28 @@ def test_completion_does_not_run_code(sh):
     push(sh, 'def f():\n    hits.append(1)\n    return (1, 2)\n')
     assert names(sh, 'f().') == []                       # calls are never evaluated
     assert push(sh, 'hits')['out'] == '[]\n'
+
+
+def details(sh, text):
+    return {n: d for n, _, d in json.loads(sh['complete'](text))}
+
+
+def test_suggestions_carry_syntax_and_argument_counts(sh):
+    push(sh, 't = (1, 2, 3)')
+    d = details(sh, 't.')
+    assert d['count']['sig'] == '(value, /)' and d['count']['req'] == 1 and d['count']['opt'] == 0
+    assert d['index']['req'] == 1 and d['index']['opt'] == 2      # index(value, start=0, stop=maxsize)
+    assert d['count']['doc']
+
+
+def test_user_functions_and_builtins_show_their_arguments(sh):
+    push(sh, 'def area(w, h=1, *rest):\n    return w * h\n')
+    d = details(sh, 'are')['area']
+    assert d['sig'] == '(w, h=1, *rest)' and d['req'] == 1 and d['opt'] == 1 and d['var'] is True
+    assert details(sh, 'le')['len']['sig'] == '(obj, /)'
+    assert details(sh, 'pri')['print']['sig']                    # falls back to the help text if there is no signature
+
+
+def test_plain_values_have_no_signature(sh):
+    push(sh, 'xy = 5')
+    assert details(sh, 'x')['xy'] is None

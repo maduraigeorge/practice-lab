@@ -142,6 +142,39 @@ def _kind_of(obj):
     return type(obj).__name__
 
 
+_DOC_SIG = re.compile(r'^[\w.]+(\(.*\))')
+
+
+def _detail(f):
+    """How to call `f`: {'sig': '(value, /)', 'req': 1, 'opt': 0, 'var': False, 'doc': 'first line of its help'}, or None."""
+    if not callable(f):
+        return None
+    d = {'sig': None, 'req': None, 'opt': 0, 'var': False, 'doc': ''}
+    try:
+        doc = inspect.getdoc(f) or ''
+    except Exception:
+        doc = ''
+    lines = [x.strip() for x in doc.split('\n') if x.strip()]
+    try:
+        sig = inspect.signature(f)
+        d['sig'] = str(sig)
+        d['req'] = d['opt'] = 0
+        for p in sig.parameters.values():
+            if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+                d['var'] = True
+            elif p.default is p.empty:
+                d['req'] += 1
+            else:
+                d['opt'] += 1
+    except (TypeError, ValueError):                    # some built-ins carry no signature: read it from the first help line
+        m = _DOC_SIG.match(lines[0]) if lines else None
+        if m:
+            d['sig'] = m.group(1)
+            lines = lines[1:]
+    d['doc'] = (lines[0] if lines else '')[:140]
+    return d
+
+
 def _attrs(obj, word):
     show_private = word.startswith('_')
     kind = _kind_of(obj)
@@ -155,7 +188,13 @@ def _attrs(obj, word):
             v = inspect.getattr_static(obj, n)
         except AttributeError:
             v = None
-        items.append([n, kind + (' method' if callable(v) else ' attribute')])
+        detail = None
+        if callable(v) or isinstance(v, (classmethod, staticmethod)):
+            try:
+                detail = _detail(getattr(obj, n))       # the bound method, so `self` is already left out
+            except Exception:
+                detail = None
+        items.append([n, kind + (' method' if callable(v) or detail else ' attribute'), detail])
     return items
 
 
@@ -164,15 +203,15 @@ def _names(word):
     for n, v in list(NS.items()):
         if not n.startswith('__') and n.lower().startswith(word.lower()) and n != word and n not in seen:
             seen.add(n)
-            items.append([n, 'yours (%s)' % _kind_of(v)])
+            items.append([n, 'yours (%s)' % _kind_of(v), _detail(v)])
     for n in dir(builtins):
         if not n.startswith('_') and n.lower().startswith(word.lower()) and n != word and n not in seen:
             seen.add(n)
-            items.append([n, 'built-in'])
+            items.append([n, 'built-in', _detail(getattr(builtins, n))])
     for n in keyword.kwlist:
         if n.lower().startswith(word.lower()) and n != word and n not in seen:
             seen.add(n)
-            items.append([n, 'keyword'])
+            items.append([n, 'keyword', None])
     return items
 
 
