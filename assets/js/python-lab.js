@@ -1,5 +1,6 @@
 /* Python lab: editor, worker control, step player and renderers. */
-import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, acHtml, acTip } from './shared.js';
+import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav } from './shared.js';
+import { acHtml, acTip, isCallContext, buildCall, snipValid, snipNext } from './py-suggest.js';
 import { initDock } from './dock.js';
 import { parse } from './pseudo-parser.js';
 import { pythonToPseudo } from './python-to-pseudo.js';
@@ -478,39 +479,30 @@ function acRender() {
   el.innerHTML = acHtml(ac.items, ac.i);
   const on = el.querySelector('.on'); if (on) on.scrollIntoView({ block: 'nearest' });
 }
-let snip = null;            // argument placeholders just inserted: { names: [...], idx }; Tab jumps to the next one
+let snip = null;            // argument placeholders just inserted: { open, parts, idx }; Tab jumps to the next one (see py-suggest.js)
 function acAccept(i = ac.i) {
   const ta = $('code'), [name, , d] = ac.items[i], end = ta.selectionStart;
   snip = null;
-  if (!(d && d.sig) || ta.value[end] === '(') {                    // a plain name, or the brackets are already there
-    ta.setRangeText(name, ac.start, end, 'end');
-  } else {                                                          // a function or method: add the brackets, with a placeholder for each required argument
-    const req = (d.args || []).filter(a => a.k === 'req').map(a => a.n);
-    ta.setRangeText(`${name}(${req.join(', ')})`, ac.start, end, 'end');
-    const open = ac.start + name.length + 1;
-    if (req.length) { ta.setSelectionRange(open, open + req[0].length); snip = { names: req, idx: 0 }; }   // typing now replaces the placeholder
-    else ta.setSelectionRange(open, open);
+  const line = ta.value.slice(0, ac.start).split('\n').pop();
+  const call = ta.value[end] !== '(' && isCallContext(line) ? buildCall(name, d) : null;   // brackets only where the name is being called
+  if (!call) ta.setRangeText(name, ac.start, end, 'end');
+  else {
+    ta.setRangeText(call.text, ac.start, end, 'end');
+    ta.setSelectionRange(ac.start + call.sel[0], ac.start + call.sel[1]);                    // typing now replaces the first placeholder
+    if (call.parts.length) snip = { open: ac.start + call.open, parts: call.parts, idx: 0 };
   }
   acHide(); onEdit();
 }
-function snipNext(ta) {
-  if (++snip.idx < snip.names.length) {
-    const nm = snip.names[snip.idx], at = ta.value.indexOf(nm, ta.selectionEnd);
-    if (at >= 0) { ta.setSelectionRange(at, at + nm.length); return; }
-  }
-  const close = ta.value.indexOf(')', ta.selectionEnd), p = close >= 0 ? close + 1 : ta.selectionEnd;     // done: continue after the closing bracket
-  ta.setSelectionRange(p, p); snip = null;
-}
 $('ac').addEventListener('mousedown', e => { const d = e.target.closest('[data-i]'); if (d) { e.preventDefault(); acAccept(+d.dataset.i); } });
-$('ac').addEventListener('mouseover', e => {                        // hovering a suggestion shows its explanation
+$('ac').addEventListener('mousemove', e => {                        // moving the mouse over a suggestion shows its explanation (a still pointer under a redrawn list does nothing)
   const d = e.target.closest('[data-i]'), i = d ? +d.dataset.i : -1;
   if (i < 0 || i === ac.i || !ac.items[i]) return;
-  ac.i = i; ac.nav = true;
-  const el = $('ac'), on = el.querySelector('.on'); if (on) on.classList.remove('on');
+  ac.i = i;
+  const el = $('ac'), on = el.querySelector('.on'), tip = el.querySelector('.tip'), [n, , det] = ac.items[i];
+  if (on) on.classList.remove('on');
   d.classList.add('on');
-  const tip = el.querySelector('.tip'), [n, , det] = ac.items[i];
-  const box = document.createElement('div'); box.innerHTML = acTip(n, det);
   if (tip) tip.remove();
+  const box = document.createElement('div'); box.innerHTML = acTip(n, det);
   if (box.firstChild) el.appendChild(box.firstChild);
 });
 $('code').addEventListener('blur', acHide);
@@ -531,7 +523,15 @@ $('code').addEventListener('keydown', e => {
   const leave = escTab; if (e.key !== 'Tab' && e.key !== 'Shift') escTab = false;
   if (e.key === 'Escape') { escTab = true; snip = null; return; }
   if (e.key === 'Enter') snip = null;
-  if (e.key === 'Tab' && snip && !e.shiftKey) { e.preventDefault(); snipNext(ta); return; }
+  if (e.key === 'Tab' && snip && !e.shiftKey) {
+    if (snipValid(ta.value, snip, ta.selectionStart)) {            // still inside the call: next placeholder
+      e.preventDefault();
+      const r = snipNext(ta.value, ta.selectionEnd, snip);
+      ta.setSelectionRange(r.sel[0], r.sel[1]); snip = r.snip;
+      return;
+    }
+    snip = null;                                                    // the caret left the call (or the brackets changed): Tab indents as usual
+  }
   if (e.key === 'Tab' && !leave) { e.preventDefault(); indentKey(ta, e, 4); onEdit(); }
   else if (e.key === 'Enter') {
     e.preventDefault();

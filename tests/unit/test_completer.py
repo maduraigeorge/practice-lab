@@ -27,6 +27,9 @@ def lab():
         def details(self, text):
             return {n: d for n, _, d in self.items(text)}
 
+        def detail_of(self, f):
+            return comp['_detail'](f)
+
         def ns(self):
             return runner['run'].__globals__['LAST_NS']
 
@@ -127,3 +130,24 @@ def test_every_argument_is_described(lab):
     assert p['sig'] == "(*args, sep=' ', end='\\n', file=None, flush=False)"
     assert p['args'][0] == {'n': '*args', 'k': 'var'}
     assert all(a['kwonly'] for a in p['args'][1:])
+
+
+def test_position_only_arguments_are_flagged_so_the_popup_can_say_so(lab):
+    lab.run('d = {}\ndef f(a, *, b, c=1): pass\n')
+    get = lab.details('d.g')['get']
+    assert get['sig'] == '(key, default=None)' and all(a['posonly'] for a in get['args'])     # '/' hidden, but the popup warns: no default=...
+    detail = lab.detail_of(lab.ns()['f'])
+    assert detail['sig'] == '(a, *, b, c=1)'
+    kinds = {a['n']: (a['k'], a['kwonly']) for a in detail['args']}
+    assert kinds == {'a': ('req', False), 'b': ('req', True), 'c': ('opt', True)}
+
+
+def test_an_unreadable_signature_means_no_signature_at_all(lab, monkeypatch):
+    import inspect
+
+    def f():
+        pass
+    f.__doc__ = 'f($self, x, ...)\nDoes a thing.'
+    monkeypatch.setattr(inspect, 'signature', lambda *a, **k: (_ for _ in ()).throw(ValueError('no signature')))
+    d = lab.detail_of(f)
+    assert d['sig'] is None and d['args'] is None and d['req'] is None      # so the editor adds no brackets and guesses no placeholders

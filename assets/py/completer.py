@@ -121,7 +121,7 @@ def _args_from_sig(sig):
         elif p.kind is p.VAR_KEYWORD:
             out.append({'n': '**' + p.name, 'k': 'var'})
         else:
-            a = {'n': p.name, 'k': 'req' if p.default is p.empty else 'opt', 'kwonly': p.kind is p.KEYWORD_ONLY}
+            a = {'n': p.name, 'k': 'req' if p.default is p.empty else 'opt', 'kwonly': p.kind is p.KEYWORD_ONLY, 'posonly': p.kind is p.POSITIONAL_ONLY}
             if p.default is not p.empty:
                 a['dv'] = _short(repr(p.default))
             out.append(a)
@@ -138,7 +138,7 @@ def _args_from_text(sig):
     first_default = len(pos) - len(a.defaults)
     out = []
     for i, x in enumerate(pos):
-        e = {'n': x.arg, 'k': 'req' if i < first_default else 'opt', 'kwonly': False}
+        e = {'n': x.arg, 'k': 'req' if i < first_default else 'opt', 'kwonly': False, 'posonly': i < len(a.posonlyargs)}
         if i >= first_default:
             e['dv'] = _short(ast.unparse(a.defaults[i - first_default]))
         out.append(e)
@@ -187,8 +187,7 @@ def _detail(f):
         if m and not known:
             lines = lines[1:]
         if text:
-            args = _args_from_text(text)
-            d['sig'] = text if args is None else None
+            args = _args_from_text(text)                 # None when the text is not valid Python: then there is no signature to show
     if args is not None:
         d['args'] = args
         d['sig'] = _render(args)
