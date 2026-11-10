@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0
+
+### Python lab
+* **Interactive shell** (`>>>` prompt) that keeps your variables between lines. Tab completion comes from the real objects
+  (`t = (1, 2, 3)` then `t.` offers only `count` and `index`), and each suggestion shows its syntax, how many arguments it takes
+  and what it does.
+
+### App
+* Version label (`v1.1.0`) in each lab header, and every deploy stamps a new build on all file URLs so browsers load the update
+  at once instead of a cached copy (`tools/stamp_version.py`). The release number is `version` in `package.json`.
+
 ## 1.0.0
 
 First production release.

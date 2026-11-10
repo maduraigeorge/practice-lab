@@ -1,4 +1,5 @@
 """tools/stamp_version.py: every file URL the site loads gets the same ?v= version, source files stay untouched."""
+import json
 import re
 import shutil
 import subprocess
@@ -7,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 V = '261111.0100-abc1234'
+RELEASE = json.loads((ROOT / 'package.json').read_text(encoding='utf8'))['version']
 
 
 def test_stamping_a_copy_versions_every_reference(tmp_path):
@@ -19,7 +21,7 @@ def test_stamping_a_copy_versions_every_reference(tmp_path):
 
     for page in [site / 'index.html', *(site / 'labs').glob('*.html')]:
         html = page.read_text(encoding='utf8')
-        assert f'<meta name="app-version" content="{V}">' in html, page.name
+        assert f'<meta name="app-version" content="{RELEASE}">' in html and f'<meta name="app-build" content="{V}">' in html, page.name
         for ref in re.findall(r'(?:href|src|data-src)="([^"#:]+\.(?:css|js|html|svg)(?:\?[^"]*)?)"', html):
             assert ref.endswith('?v=' + V), f'{page.name}: {ref}'
     for js in (site / 'assets' / 'js').glob('*.js'):

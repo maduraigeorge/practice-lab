@@ -100,8 +100,9 @@ const LABS = [['python', '🐍', 'Python'], ['sql', '🗄️', 'SQL'], ['flow', 
 export function mountLabNav(current) {
   const nav = document.querySelector('.labnav'); if (!nav) return;
   const embedded = window.parent !== window;
-  const ver = (document.querySelector('meta[name="app-version"]') || {}).content;       // stamped at deploy time (see tools/stamp_version.py)
-  if (ver && ver !== 'dev') { const v = document.createElement('span'); v.className = 'ver'; v.textContent = 'v' + ver; v.title = 'Site version (changes with every update)'; nav.after(v); }
+  const meta = n => (document.querySelector(`meta[name="${n}"]`) || {}).content;           // stamped at deploy time (tools/stamp_version.py)
+  const ver = meta('app-version');
+  if (ver && ver !== 'dev') { const v = document.createElement('span'); v.className = 'ver'; v.textContent = 'v' + ver; v.title = 'Practice Lab ' + ver + ' · build ' + meta('app-build'); nav.after(v); }
   for (const [id, icon, name] of LABS) {
     const a = document.createElement('a');
     a.href = `${id}-lab.html`; a.title = `${name} lab (Alt+${LABS.findIndex(l => l[0] === id) + 1})`;
