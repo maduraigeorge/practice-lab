@@ -66,6 +66,18 @@
     <textarea class="stdin-box mono" id="stdin" spellcheck="false" aria-label="Values for input(), one line per call" placeholder="e.g. Asha"></textarea>
   </section>
 
+  <section class="panel" id="p-shell">
+    <h2><span class="num">7</span>Shell <span class="right"><button class="mini" id="shStop" hidden title="Stop the running command (clears shell variables)">⏹ Stop</button><button class="mini" id="shClear" title="Clear the screen (keeps your variables)">Clear</button><button class="mini" id="shReset" title="Forget every variable and start again">Reset</button></span></h2>
+    <div class="body sh" id="sh" aria-live="polite">
+      <div class="sh-log" id="shLog"><span class="empty">Loading Python…</span></div>
+      <div class="sh-row">
+        <span class="sh-p mono" id="shPrompt">&gt;&gt;&gt;</span>
+        <textarea class="sh-in mono" id="shIn" rows="1" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Python shell: type a line and press Enter"></textarea>
+        <div class="ac mono up" id="shAc"></div>
+      </div>
+    </div>
+  </section>
+
   <section class="panel" id="p-output">
     <h2><span class="num">6</span>Output <span class="right">print() output &amp; errors</span></h2>
     <div class="body" id="output"><span class="empty">Nothing printed yet.</span></div>
@@ -77,6 +89,7 @@
   <button data-t="result"><b>⎇</b>Flow</button>
   <button data-t="steps"><b>☰</b>Steps</button>
   <button data-t="visual"><b>▦</b>Visual</button>
+  <button data-t="shell"><b>&gt;_</b>Shell</button>
   <button data-t="input"><b>⌨</b>Input</button>
   <button data-t="output" id="tabOut"><b>▤</b>Output</button>
 </nav>

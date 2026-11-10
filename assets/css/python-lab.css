@@ -139,3 +139,18 @@ svg.tarrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 /* small boxes: the header hint shrinks (with …) so the minimise / maximise buttons never get pushed out */
 .panel > h2 .right { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel > h2 .wc { flex: none; }
+
+/* Interactive shell (>>> prompt) */
+#p-shell { --pc: var(--c-code); }
+#p-shell .right { display: inline-flex; gap: 5px; align-items: center; }
+.body.sh { display: flex; flex-direction: column; padding: 6px 10px; font-size: 13px; line-height: 20px; cursor: text; }
+.sh-log { white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); }
+.sh-log > div { min-height: 20px; }
+.sh-log .sh-p { color: var(--accent-bright); user-select: none; }
+.sh-log .sh-err { color: var(--bad); }
+.sh-log .sh-note { color: var(--muted); font-style: italic; font-family: var(--font-text); }
+.sh-row { position: relative; display: flex; align-items: flex-start; gap: 0; flex: none; }
+.sh-row .sh-p { color: var(--accent-bright); white-space: pre; user-select: none; flex: none; }
+.sh-in { flex: 1; min-width: 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--text); font-size: 13px; line-height: 20px; padding: 0; margin: 0; overflow: hidden; white-space: pre-wrap; }
+.ac.up { top: auto; bottom: 100%; margin-bottom: 2px; }
+@media (max-width: 900px) { #p-shell.tab-on { flex-basis: 260px; } }

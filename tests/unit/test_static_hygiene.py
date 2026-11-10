@@ -7,7 +7,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 PAGES = ['index.html', 'labs/python-lab.html', 'labs/sql-lab.html', 'labs/flow-lab.html']
 JS = sorted((ROOT / 'assets' / 'js').glob('*.js'))
-LAB_JS = {'labs/python-lab.html': ['python-lab.js', 'shared.js', 'dock.js'],
+LAB_JS = {'labs/python-lab.html': ['python-lab.js', 'python-shell.js', 'shared.js', 'dock.js'],
           'labs/sql-lab.html': ['sql-lab.js', 'shared.js', 'dock.js'],
           'labs/flow-lab.html': ['flow-lab.js', 'shared.js', 'dock.js']}
 # ids that scripts create themselves
