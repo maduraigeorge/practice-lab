@@ -155,3 +155,22 @@ export function indentKey(ta, e, w) {
   ta.setSelectionRange(ls, ls + out.join('\n').length);
   return true;
 }
+
+/* ---- autocomplete popup content, shared by the code editor and the shell ---- */
+/** "1 required + 1 optional argument", "no arguments", ... from the counts worked out by repl.py (d = { req, opt, var }). */
+export function argText(d) {
+  if (!d || d.req == null) return '';
+  const p = [];
+  if (d.req) p.push(`${d.req} required`);
+  if (d.opt) p.push(`${d.opt} optional`);
+  if (d.var) p.push('any number of extra');
+  return p.length ? p.join(' + ') + (d.req + d.opt > 1 || d.var ? ' arguments' : ' argument') : 'no arguments';
+}
+/** Rows [name, kind, detail] with the syntax beside each name, plus a help line for the highlighted row: syntax, argument count, what it does. */
+export function acHtml(items, active) {
+  const rows = items.map(([n, k, d], i) => `<div class="${i === active ? 'on' : ''}" data-i="${i}"><span>${esc(n)}${d && d.sig ? `<i>${esc(d.sig)}</i>` : ''}</span><small>${esc(k)}</small></div>`).join('');
+  const [n, , d] = items[active] || [];
+  if (!d) return rows;
+  const a = argText(d);
+  return rows + `<p class="tip"><b>${esc(n + (d.sig || '(...)'))}</b>${a ? ' · ' + esc(a) : ''}${d.doc ? `<br>${esc(d.doc)}` : ''}</p>`;
+}

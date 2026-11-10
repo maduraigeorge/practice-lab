@@ -105,3 +105,11 @@ def test_user_functions_and_builtins_show_their_arguments(sh):
 def test_plain_values_have_no_signature(sh):
     push(sh, 'xy = 5')
     assert details(sh, 'x')['xy'] is None
+
+
+def test_sigs_give_the_editor_real_signatures_for_builtin_types(sh):
+    s = json.loads(sh['sigs']('set'))
+    assert s['add']['req'] == 1 and s['add']['doc']
+    assert json.loads(sh['sigs']('tuple'))['count']['sig'] == '(value, /)'
+    assert json.loads(sh['sigs']('builtins'))['len']['sig'] == '(obj, /)'
+    assert json.loads(sh['sigs']('nonsense')) == {}

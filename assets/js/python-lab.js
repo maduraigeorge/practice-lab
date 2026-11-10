@@ -1,5 +1,5 @@
 /* Python lab: editor, worker control, step player and renderers. */
-import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav } from './shared.js';
+import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, acHtml } from './shared.js';
 import { initDock } from './dock.js';
 import { initShell } from './python-shell.js';
 import { parse } from './pseudo-parser.js';
@@ -41,7 +41,7 @@ function startWorker() {
   worker = new Worker(new URL('./python-worker.js', import.meta.url));
   worker.onmessage = e => {
     const m = e.data;
-    if (m.type === 'ready') { ready = true; setStatus('Ready', 'ok'); schedule(0); if (shell) shell.ready(); }
+    if (m.type === 'ready') { ready = true; setStatus('Ready', 'ok'); schedule(0); if (shell) shell.ready(); loadSigs(); }
     else if (m.type === 'repl') { const p = shellPending.get(m.rid); if (p) { shellPending.delete(m.rid); p.resolve(m.data); } }
     else if (m.type === 'fail') setStatus('Could not load Python: ' + m.msg + ' (internet needed on first load)', 'err');
     else if (m.type === 'result' && m.id === runId) {
@@ -426,6 +426,10 @@ function receiverType(before) {           // `before` ends right before the dot
   }
   return null;
 }
+const SIGS = {};   // real signatures of the built-in types and functions, asked from Python once it is ready: SIGS.set.add = { sig, req, opt, var, doc }
+function loadSigs() {
+  for (const t of [...Object.keys(METHODS), 'builtins']) shellCall('sigs', { text: t }).then(r => { SIGS[t] = JSON.parse(r); }).catch(() => {});
+}
 const ac = { items: [], i: 0, start: 0, open: false, nav: false };
 let escTab = false;         // Esc, then Tab, moves focus out of the editor (Tab otherwise indents)
 let charW = 8.4;
@@ -441,11 +445,11 @@ function acUpdate() {
   let pool;
   if (dotted) {
     const ty = receiverType(before.slice(0, before.length - word.length - 1));
-    pool = ty && METHODS[ty] ? METHODS[ty].map(n => [n, ty + ' method']) : ALL_METHODS.map(n => [n, 'method']);
+    pool = ty && METHODS[ty] ? METHODS[ty].map(n => [n, ty + ' method', (SIGS[ty] || {})[n]]) : ALL_METHODS.map(n => [n, 'method']);
   }
   else {
     const own = [...new Set(ta.value.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [])].filter(n => n !== word);
-    pool = [...own.map(n => [n, 'yours']), ...BUILTINS.map(n => [n, 'built-in']), ...KEYWORDS.map(n => [n, 'keyword'])];
+    pool = [...own.map(n => [n, 'yours']), ...BUILTINS.map(n => [n, 'built-in', (SIGS.builtins || {})[n]]), ...KEYWORDS.map(n => [n, 'keyword'])];
   }
   const seen = new Set(), lw = word.toLowerCase();
   const items = pool.filter(([n]) => !seen.has(n) && seen.add(n) && n !== word && n.toLowerCase().startsWith(lw)).slice(0, 30);
@@ -453,13 +457,13 @@ function acUpdate() {
   ac.items = items; ac.i = 0; ac.start = pos - word.length; ac.open = true; ac.nav = false;
   const lines = before.split('\n'), row = lines.length - 1, col = lines[row].length - word.length;
   const el = $('ac');
-  el.style.left = Math.min(46 + 10 + col * charW - ta.scrollLeft, ta.clientWidth - 150) + 'px';
+  el.style.left = Math.min(46 + 10 + col * charW - ta.scrollLeft, ta.clientWidth - 280) + 'px';
   el.style.top = (PAD + (row + 1) * LH - ta.scrollTop) + 'px';
   acRender(); el.style.display = 'block';
 }
 function acRender() {
   const el = $('ac');
-  el.innerHTML = ac.items.map(([n, k], i) => `<div class="${i === ac.i ? 'on' : ''}" data-i="${i}"><span>${esc(n)}</span><small>${esc(k)}</small></div>`).join('');
+  el.innerHTML = acHtml(ac.items, ac.i);
   const on = el.querySelector('.on'); if (on) on.scrollIntoView({ block: 'nearest' });
 }
 function acAccept(i = ac.i) {

@@ -17,7 +17,7 @@ const ready = (async () => {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const g = py.globals.get('dict')();
     py.runPython(await r.text(), { globals: g });
-    repl = { push: g.get('push'), complete: g.get('complete'), reset: g.get('reset'), banner: g.get('banner') };
+    repl = { push: g.get('push'), complete: g.get('complete'), sigs: g.get('sigs'), reset: g.get('reset'), banner: g.get('banner') };
   } catch (err) { repl = null; }
   postMessage({ type: 'ready' });
 })().catch(e => postMessage({ type: 'fail', msg: String(e && e.message || e) }));
@@ -32,6 +32,7 @@ onmessage = async e => {
       if (!repl) throw new Error('The shell could not be loaded.');
       data = type === 'repl' ? repl.push(String(e.data.line), String(e.data.stdin || ''))
         : type === 'complete' ? repl.complete(String(e.data.text))
+        : type === 'sigs' ? repl.sigs(String(e.data.text))
         : type === 'reset' ? repl.reset() : repl.banner();
     } catch (err) { data = JSON.stringify({ fatal: String(err && err.message || err) }); }
     postMessage({ type: 'repl', rid, data });

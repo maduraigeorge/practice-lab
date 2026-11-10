@@ -215,6 +215,27 @@ def _names(word):
     return items
 
 
+_SAMPLES = {'str': '', 'list': [], 'dict': {}, 'tuple': (), 'set': set(), 'int': 0, 'float': 0.0, 'bool': True}
+
+
+def sigs(tname):
+    """How to call every public method of a built-in type (or every built-in function for 'builtins'): {name: detail}."""
+    out = {}
+    if tname == 'builtins':
+        for n in dir(builtins):
+            if not n.startswith('_'):
+                out[n] = _detail(getattr(builtins, n))
+    elif tname in _SAMPLES:
+        sample = _SAMPLES[tname]
+        for n in dir(sample):
+            if not n.startswith('_'):
+                try:
+                    out[n] = _detail(getattr(sample, n))
+                except Exception:
+                    pass
+    return json.dumps({k: v for k, v in out.items() if v})
+
+
 def complete(text):
     m = _WORD.search(text)
     word = m.group(0) if m else ''
