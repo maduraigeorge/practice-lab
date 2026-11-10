@@ -29,6 +29,8 @@ jobs:
           cp index.html _site/
           cp -r labs assets _site/
           touch _site/.nojekyll
+      - name: Stamp a version on every file URL (cache busting)
+        run: python tools/stamp_version.py _site "$(date -u +%y%m%d.%H%M)-${GITHUB_SHA::7}"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

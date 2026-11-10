@@ -177,3 +177,4 @@ main { display: grid; gap: 8px; padding: 0 8px 10px; flex: 1; min-height: 0; }
 }
 @media (max-width: 380px) { #tabs button { font-size: 9.5px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+.ver { font: 500 10px/1 var(--font-text); color: var(--muted); opacity: .8; white-space: nowrap; }
