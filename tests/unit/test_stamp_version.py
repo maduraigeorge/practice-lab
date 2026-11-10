@@ -8,7 +8,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 V = '261111.0100-abc1234'
-RELEASE = json.loads((ROOT / 'package.json').read_text(encoding='utf8'))['version']
+sys.path.insert(0, str(ROOT / 'tools'))
+import stamp_version  # noqa: E402
+
+RELEASE = stamp_version.release_number()
 
 
 def test_stamping_a_copy_versions_every_reference(tmp_path):
@@ -32,3 +35,22 @@ def test_stamping_a_copy_versions_every_reference(tmp_path):
     # the source tree is not touched
     assert 'content="dev"' in (ROOT / 'index.html').read_text(encoding='utf8')
     assert '?v=' not in (ROOT / 'assets' / 'js' / 'python-lab.js').read_text(encoding='utf8')
+
+
+def test_release_number_counts_commits_after_the_last_package_json_change(tmp_path):
+    def git(*a):
+        subprocess.run(['git', '-C', str(tmp_path), '-c', 'user.name=t', '-c', 'user.email=t@t', *a], check=True, capture_output=True)
+    git('init', '-q')
+    (tmp_path / 'package.json').write_text('{"version": "2.3.0"}', encoding='utf8')
+    git('add', '.')
+    git('commit', '-qm', 'base')
+    assert stamp_version.release_number(tmp_path) == '2.3.0'
+    for i in range(3):
+        (tmp_path / 'f.txt').write_text(str(i), encoding='utf8')
+        git('add', '.')
+        git('commit', '-qm', f'c{i}')
+    assert stamp_version.release_number(tmp_path) == '2.3.3'
+    (tmp_path / 'package.json').write_text('{"version": "2.4.0"}', encoding='utf8')
+    git('add', '.')
+    git('commit', '-qm', 'bump')
+    assert stamp_version.release_number(tmp_path) == '2.4.0'

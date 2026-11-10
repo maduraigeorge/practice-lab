@@ -23,6 +23,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # the release number counts commits, so the full history is needed
       - name: Assemble the site
         run: |
           mkdir _site
