@@ -1,5 +1,5 @@
 /* SQL lab: connection dialog, editor, runner, explainer UI, schema diagram, file import UI. */
-import { $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav } from './shared.js';
+import { $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, makeLoading } from './shared.js';
 import { initDock } from './dock.js';
 import { maskSQL, splitStatements, analyze, KW, FUNCS } from './sql-parse.js';
 import { prepareImport } from './sql-import.js';
@@ -660,14 +660,8 @@ dlg.addEventListener('mousedown', e => { downOnBackdrop = e.target === dlg; });
 dlg.addEventListener('click', e => { if (e.target === dlg && downOnBackdrop) dlg.close(); });
 
 /* the empty boxes say "Loading SQL engine…" (with a spinner) until the sample database is ready */
-const loadSaved = {};
-function setLoading(on) {
-  for (const id of ['result', 'visual', 'log']) {
-    const el = $(id);
-    if (on) { loadSaved[id] = el.innerHTML; el.innerHTML = '<span class="empty loading"><i class="spin" aria-hidden="true"></i>Loading SQL engine… the first load takes a few seconds</span>'; }
-    else if (el.querySelector('.loading')) el.innerHTML = loadSaved[id] || '';
-  }
-}
+const loading = makeLoading();
+const setLoading = on => on ? loading.show(['result', 'visual', 'log'].map($), 'Loading SQL engine… the first load takes a few seconds') : loading.hide();
 
 (async function boot() {
   $('sql').value = store.get('sqlLab.sql', 'SELECT * FROM customers;');

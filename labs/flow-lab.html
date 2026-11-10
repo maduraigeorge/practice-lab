@@ -8,7 +8,7 @@
 <meta name="app-build" content="dev">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
-<title>Flowchart Lab · Practice Lab</title>
+<title>Pseudocode lab · @maduraigeorge</title>
 <link rel="icon" type="image/svg+xml" href="../assets/img/favicon.svg">
 <link rel="stylesheet" href="../assets/css/base.css">
 <link rel="stylesheet" href="../assets/css/dock.css">
@@ -16,11 +16,11 @@
 </head>
 <body>
 <header>
-  <span class="brand">Practice Lab <em>@maduraigeorge</em></span>
+  <span class="brand"><span class="by">@maduraigeorge</span></span>
   <nav class="labnav" aria-label="Labs"></nav>
   <span id="status" class="status busy" role="status" aria-live="polite">Starting…</span>
   <span class="spacer"></span>
-  <select id="examples" aria-label="Examples and practice"></select>
+  <select id="examples" aria-label="Examples and practice" title="Examples and practice exercises"></select>
   <span class="popwrap">
     <button id="inputBtn" title="Values for INPUT – one per line, or separated by spaces">⌨ Input</button>
     <div class="popover" id="inputPop" hidden>
@@ -33,7 +33,7 @@
 
 <main>
   <section class="panel" id="p-code">
-    <h2><span class="num">1</span>Code <span class="right"><b id="lang">Pseudocode</b> or Python</span></h2>
+    <h2><span class="num">1</span>Code <span class="right" title="Write pseudocode or Python: the flowchart updates as you type"><b id="lang">Pseudocode</b> or Python · live</span></h2>
     <div class="editor">
       <div class="gutter"><pre id="gut">1</pre></div>
       <div class="edwrap">

@@ -137,7 +137,6 @@ svg.tarrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 }
 
 /* small boxes: the header hint shrinks (with …) so the minimise / maximise buttons never get pushed out */
-.panel > h2 .right { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel > h2 .wc { flex: none; }
 
 /* suggestion list: syntax beside each name, and a help line for the highlighted one */
@@ -151,6 +150,3 @@ svg.tarrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .ac p.tip .ar { margin-top: 2px; color: var(--muted); }
 .ac p.tip .ar code { font-family: var(--font-mono); font-weight: 700; color: var(--text); }
 .ac p.tip .dc { margin-top: 3px; }
-
-/* Frames / Cards toggle: a comfortable size to hit */
-.vtabs button.mini { min-height: 24px; padding: 2px 11px 1px; font-size: 11px; }

@@ -53,10 +53,12 @@ kbd { background: var(--chip); border: 1px solid var(--border); border-bottom-wi
 
 /* ---- header & controls ---- */
 .brand { display: flex; align-items: baseline; gap: 6px; font: 800 14px/1 var(--font-title); text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
-.brand em { font: 500 10.5px/1 var(--font-text); text-transform: none; letter-spacing: 0; color: var(--muted); font-style: normal; }
+.brand .by { font: 500 10.5px/1 var(--font-text); text-transform: none; letter-spacing: 0; color: var(--muted); }
 .labnav { display: inline-flex; gap: 2px; background: var(--chip); padding: 2px; border-radius: 99px; flex: none; }
 .labnav a { font: 700 11.5px/1 var(--font-title); text-transform: uppercase; letter-spacing: .03em; padding: 5px 11px 4px; border-radius: 99px; color: var(--muted); text-decoration: none; white-space: nowrap; }
 .labnav a:hover { color: var(--text); }
+.labnav a:not(.on) span { display: none; }                                          /* only the open lab shows its name; the others are icons (full name on hover) */
+.labnav a:not(.on) { padding: 5px 10px 4px; font-size: 14px; }
 .labnav a.on { background: var(--accent-bright); color: #fff; box-shadow: 0 2px 0 var(--accent); }
 .popwrap { position: relative; display: inline-flex; }
 .popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: min(300px, 86vw); padding: 10px; background: var(--panel);
@@ -131,8 +133,9 @@ main { display: grid; gap: 8px; padding: 0 8px 10px; flex: 1; min-height: 0; }
 
 /* ---- keep the single header bar on one row as the window narrows ---- */
 @media (max-width: 1280px) { header { gap: 5px; } header button { padding-left: 9px; padding-right: 9px; } header select { padding-left: 6px; } }
-@media (max-width: 1240px) { .brand em { display: none; } .status { max-width: 220px; } }
-@media (max-width: 1100px) { .labnav a span { display: none; } .labnav a { padding: 5px 10px 4px; font-size: 14px; } .status { max-width: 150px; } #layoutSel { max-width: 104px; } header select { max-width: 150px; } }
+@media (max-width: 1240px) { .status { max-width: 220px; } }
+@media (max-width: 1000px) { .brand .by { display: none; } }
+@media (max-width: 1100px) { .status { max-width: 150px; } #layoutSel { max-width: 104px; } header select { max-width: 150px; } }
 
 /* ---- narrow layout: the bottom tab bar toggles boxes; every box that is on shares the screen ---- */
 #tabs { display: none; }
@@ -180,7 +183,10 @@ main { display: grid; gap: 8px; padding: 0 8px 10px; flex: 1; min-height: 0; }
 .brand .ver { font: 600 10px/1 var(--font-text); text-transform: none; letter-spacing: 0; color: var(--accent-bright); border: 1.5px solid var(--border); border-radius: 99px; padding: 2px 6px 1px; align-self: center; }
 
 /* "Loading …" placeholder shown in the empty boxes until the engine is ready (all labs) */
-.empty.loading { display: inline-flex; align-items: center; gap: 8px; font-style: normal; }
+.loading { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
 .spin { width: 14px; height: 14px; flex: none; border: 2px solid var(--border); border-top-color: var(--accent-bright); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; border-top-color: var(--accent-bright); } }
+/* inside a box header (28px high) the small buttons are 22px so they never touch the edges; the hint shrinks with an ellipsis instead of pushing them out */
+.panel > h2 button.mini { min-height: 22px; padding: 1px 10px; }
+.panel > h2 .right { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

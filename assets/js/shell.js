@@ -1,6 +1,6 @@
 /* Shell: keeps one iframe per lab alive (so each lab keeps its state) and shows the selected one.
  * Labs ask for a switch with postMessage({type:'practice-lab:nav', lab}); only same-origin messages are honoured. */
-const LABS = { python: 'Python', sql: 'SQL', flow: 'Flowchart' };
+const LABS = { python: 'Python', sql: 'SQL', flow: 'Pseudocode' };
 const frames = Object.fromEntries(Object.keys(LABS).map(k => [k, document.getElementById('fr-' + k)]));
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 
@@ -21,7 +21,7 @@ function show(lab) {
     f.classList.toggle('on', on);
     if (on && !f.getAttribute('src')) f.setAttribute('src', f.dataset.src);
   }
-  document.title = `${LABS[lab]} lab · Practice Lab – @maduraigeorge`;
+  document.title = `${LABS[lab]} lab · @maduraigeorge`;
   store('lab.tab', lab);
   if (location.hash !== '#' + lab) history.replaceState(null, '', '#' + lab);
   const w = frames[lab].contentWindow; if (w) w.focus();

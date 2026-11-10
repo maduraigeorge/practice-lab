@@ -93,7 +93,7 @@ export function measureChar(textarea) {
 }
 
 /* ---- lab switcher shown in every lab header ---- */
-const LABS = [['python', '🐍', 'Python'], ['sql', '🗄️', 'SQL'], ['flow', '📐', 'Flowchart']];
+const LABS = [['python', '🐍', 'Python'], ['sql', '🗄️', 'SQL'], ['flow', '📐', 'Pseudocode']];
 
 /** Fill <nav class="labnav"> with links to the other labs. Inside the shell iframe the shell switches the visible lab
  *  (so every lab keeps its state); on a standalone page the links are plain navigation. */
@@ -102,13 +102,14 @@ export function mountLabNav(current) {
   const embedded = window.parent !== window;
   const meta = n => (document.querySelector(`meta[name="${n}"]`) || {}).content;           // stamped at deploy time (tools/stamp_version.py)
   const ver = meta('app-version');
-  const brand = document.querySelector('.brand');                                       // version sits right after the app name
-  if (ver && brand) { const v = document.createElement('span'); v.className = 'ver'; v.textContent = ver === 'dev' ? 'dev' : 'v' + ver; v.title = ver === 'dev' ? 'Local copy (the version is added when the site is deployed)' : 'Practice Lab ' + ver + ' · build ' + meta('app-build'); brand.firstChild.after(v); }
+  const brand = document.querySelector('.brand');                                       // the version pill sits right after the handle
+  if (ver && brand) { const v = document.createElement('span'); v.className = 'ver'; v.textContent = ver === 'dev' ? 'dev' : 'v' + ver; v.title = ver === 'dev' ? 'Local copy (the version is added when the site is deployed)' : 'Practice Lab ' + ver + ' · build ' + meta('app-build'); brand.appendChild(v); }
   for (const [id, icon, name] of LABS) {
     const a = document.createElement('a');
     a.href = `${id}-lab.html`; a.title = `${name} lab (Alt+${LABS.findIndex(l => l[0] === id) + 1})`;
+    a.setAttribute('aria-label', `${name} lab`);                                       // inactive tabs show only the icon: the name stays for screen readers and the tooltip
     a.textContent = `${icon} `;
-    const label = document.createElement('span'); label.textContent = name; a.appendChild(label);
+    const label = document.createElement('span'); label.textContent = `${name} lab`; a.appendChild(label);
     if (id === current) { a.className = 'on'; a.setAttribute('aria-current', 'page'); }
     a.addEventListener('click', e => {
       if (id === current) return e.preventDefault();
@@ -154,4 +155,34 @@ export function indentKey(ta, e, w) {
   ta.setRangeText(out.join('\n'), ls, le, 'select');
   ta.setSelectionRange(ls, ls + out.join('\n').length);
   return true;
+}
+
+/* ---- "Loading …" placeholder with a spinner for empty boxes (used by every lab) ---- */
+/** const loading = makeLoading(); loading.show([el, ...], 'Loading …'); ... loading.hide();
+ *  show() puts a spinner message into each box (a box that already has one is left alone, so calling it twice is harmless).
+ *  hide() takes the spinner out again. If the box is empty after that, its old content is put back; if something else was
+ *  drawn there meanwhile (a log line, a chart) that stays. */
+export function makeLoading() {
+  const saved = new Map();
+  return {
+    show(els, msg) {
+      for (const el of els) {
+        if (saved.has(el)) continue;
+        saved.set(el, { html: el.innerHTML, hidden: el.hidden });
+        const s = document.createElement('span'), i = document.createElement('i');
+        s.className = 'loading'; i.className = 'spin'; i.setAttribute('aria-hidden', 'true');
+        s.append(i, msg);
+        el.replaceChildren(s); el.hidden = false;
+      }
+    },
+    hide() {
+      for (const [el, st] of saved) {
+        const sp = el.querySelector(':scope > .loading');
+        if (!sp) continue;                                        // something else replaced it: nothing to restore
+        sp.remove();
+        if (!el.firstElementChild && !el.textContent.trim()) { el.innerHTML = st.html; if (!el.hidden) el.hidden = st.hidden; }
+      }
+      saved.clear();
+    },
+  };
 }

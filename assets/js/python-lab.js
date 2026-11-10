@@ -1,5 +1,5 @@
 /* Python lab: editor, worker control, step player and renderers. */
-import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav } from './shared.js';
+import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, makeLoading } from './shared.js';
 import { acHtml, acTip, isCallContext, buildCall, snipValid, snipNext } from './py-suggest.js';
 import { initDock } from './dock.js';
 import { parse } from './pseudo-parser.js';
@@ -29,16 +29,10 @@ const F = { chart: null, els: null, nodes: [], edges: [], scale: 1 };   // flowc
 
 /* ---------- loading state ---------- */
 let booted = false;            // the first Python start has finished (or failed); later restarts keep the results on screen
-const loadSaved = {};
+const loading = makeLoading();
 function setLoading(on) {      // the empty boxes say "Loading Python…" (with a spinner) until the worker is ready
-  for (const id of ['steps', 'visual', 'output']) {
-    const el = $(id);
-    if (on) { loadSaved[id] = el.innerHTML; el.innerHTML = '<span class="empty loading"><i class="spin" aria-hidden="true"></i>Loading Python… the first load takes a few seconds</span>'; }
-    else if (el.querySelector('.loading')) el.innerHTML = loadSaved[id] || '';
-  }
-  const c = $('chartEmpty');
-  if (on) { loadSaved.chart = c.textContent; c.textContent = 'Loading Python…'; }
-  else if (c.textContent === 'Loading Python…') c.textContent = loadSaved.chart;
+  if (on) loading.show(['steps', 'visual', 'output', 'chartEmpty'].map($), 'Loading Python… the first load takes a few seconds');
+  else loading.hide();
 }
 
 /* ---------- worker ---------- */

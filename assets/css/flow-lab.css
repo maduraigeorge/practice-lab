@@ -78,3 +78,6 @@ pre.out { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 1
 .goal ul { margin: 4px 0 0; padding-left: 18px; }
 .pad { padding: 10px 12px; }
 @media (max-width: 900px) { .controls input[type=range] { order: 9; flex: 1 1 100%; } .controls .count { margin-left: auto; } #hl, #code { font-size: 14px; } }
+
+/* narrow windows: the Examples menu takes the room it needs so "Examples & practice…" is readable */
+@media (max-width: 900px) { #examples { max-width: none; min-width: 0; flex: 1 1 100%; } }
