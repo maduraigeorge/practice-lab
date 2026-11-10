@@ -146,3 +146,8 @@ svg.tarrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .ac div span i { font-style: normal; opacity: .7; margin-left: 2px; }
 .ac p.tip { position: sticky; bottom: -3px; margin: 3px -3px -3px; padding: 5px 10px; background: var(--panel); border-top: 2px solid var(--border); border-radius: 0 0 10px 10px; font: 500 11.5px/1.4 var(--font-text); white-space: normal; cursor: default; }
 .ac p.tip b { font-family: var(--font-mono); font-weight: 700; color: var(--accent-bright); word-break: break-all; }
+
+.ac p.tip .ar, .ac p.tip .dc { display: block; }
+.ac p.tip .ar { margin-top: 2px; color: var(--muted); }
+.ac p.tip .ar code { font-family: var(--font-mono); font-weight: 700; color: var(--text); }
+.ac p.tip .dc { margin-top: 3px; }

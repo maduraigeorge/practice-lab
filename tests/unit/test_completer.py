@@ -93,8 +93,8 @@ def test_completion_never_runs_code(lab):
 
 def test_signatures_for_builtin_types_and_functions(lab):
     assert lab.sigs('set')['add']['req'] == 1
-    assert lab.sigs('tuple')['count']['sig'] == '(value, /)'
-    assert lab.sigs('builtins')['len']['sig'] == '(obj, /)'
+    assert lab.sigs('tuple')['count']['sig'] == '(value)'      # no '/' marker shown
+    assert lab.sigs('builtins')['len']['sig'] == '(obj)'
     assert lab.sigs('nonsense') == {}
     assert lab.details('t.') == {}                   # no program has run: nothing to suggest
 
@@ -111,7 +111,19 @@ def test_builtins_without_their_own_signature_still_explain_their_arguments(lab,
     monkeypatch.setattr(inspect, 'signature', no_builtin_sigs)
     lab.run('s = set(range(10))\nd = {}\n')
     add = lab.details('s.a')['add']
-    assert add['sig'] == '(element, /)' and add['req'] == 1 and add['opt'] == 0 and add['doc']
+    assert add['sig'] == '(element)' and [a['n'] for a in add['args']] == ['element'] and add['req'] == 1 and add['opt'] == 0 and add['doc']
     assert lab.details('s.un')['union']['var'] is True
     keys = lab.details('d.k')['keys']
     assert keys['sig'] == '()' and keys['req'] == 0                  # "no arguments"
+
+
+def test_every_argument_is_described(lab):
+    lab.run('t = (1, 2)\n')
+    index = lab.details('t.in')['index']
+    assert index['sig'].startswith('(value, start=0, stop=')
+    assert [(a['n'], a['k']) for a in index['args']] == [('value', 'req'), ('start', 'opt'), ('stop', 'opt')]
+    assert index['args'][1]['dv'] == '0'
+    p = lab.details('pri')['print']
+    assert p['sig'] == "(*args, sep=' ', end='\\n', file=None, flush=False)"
+    assert p['args'][0] == {'n': '*args', 'k': 'var'}
+    assert all(a['kwonly'] for a in p['args'][1:])

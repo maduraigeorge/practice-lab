@@ -107,51 +107,94 @@ _KNOWN = {
 }
 
 
-def _count_text(sig):
-    """Count required / optional arguments in a signature written as text, e.g. '(value, start=0, /)'. Returns (req, opt, var) or None."""
+def _short(text):
+    """A default value for display; very long ones (sys.maxsize ...) become an ellipsis."""
+    return text if len(text) <= 14 else '…'
+
+
+def _args_from_sig(sig):
+    """[{n: name, k: 'req' | 'opt' | 'var', dv: default, kwonly: bool}] from an inspect.Signature."""
+    out = []
+    for p in sig.parameters.values():
+        if p.kind is p.VAR_POSITIONAL:
+            out.append({'n': '*' + p.name, 'k': 'var'})
+        elif p.kind is p.VAR_KEYWORD:
+            out.append({'n': '**' + p.name, 'k': 'var'})
+        else:
+            a = {'n': p.name, 'k': 'req' if p.default is p.empty else 'opt', 'kwonly': p.kind is p.KEYWORD_ONLY}
+            if p.default is not p.empty:
+                a['dv'] = _short(repr(p.default))
+            out.append(a)
+    return out
+
+
+def _args_from_text(sig):
+    """The same list from a signature written as text, e.g. '(value, start=0, /)'. None if it cannot be read."""
     try:
         a = ast.parse('def _f' + sig + ': pass').body[0].args
     except SyntaxError:
         return None
     pos = a.posonlyargs + a.args
-    opt = len(a.defaults) + sum(1 for x in a.kw_defaults if x is not None)
-    req = len(pos) - len(a.defaults) + sum(1 for x in a.kw_defaults if x is None)
-    return req, opt, bool(a.vararg or a.kwarg)
+    first_default = len(pos) - len(a.defaults)
+    out = []
+    for i, x in enumerate(pos):
+        e = {'n': x.arg, 'k': 'req' if i < first_default else 'opt', 'kwonly': False}
+        if i >= first_default:
+            e['dv'] = _short(ast.unparse(a.defaults[i - first_default]))
+        out.append(e)
+    if a.vararg:
+        out.append({'n': '*' + a.vararg.arg, 'k': 'var'})
+    for x, dv in zip(a.kwonlyargs, a.kw_defaults):
+        e = {'n': x.arg, 'k': 'req' if dv is None else 'opt', 'kwonly': True}
+        if dv is not None:
+            e['dv'] = _short(ast.unparse(dv))
+        out.append(e)
+    if a.kwarg:
+        out.append({'n': '**' + a.kwarg.arg, 'k': 'var'})
+    return out
+
+
+def _render(args):
+    """The syntax as people write it: add(element), index(value, start=0, stop=…). No '/' markers."""
+    parts = []
+    star = any(a.get('kwonly') for a in args) and not any(a['n'].startswith('*') and not a['n'].startswith('**') for a in args)
+    for a in args:
+        if a.get('kwonly') and star:
+            parts.append('*')
+            star = False
+        parts.append('%s=%s' % (a['n'], a['dv']) if a['k'] == 'opt' else a['n'])
+    return '(' + ', '.join(parts) + ')'
 
 
 def _detail(f):
-    """How to call `f`: {'sig': '(value, /)', 'req': 1, 'opt': 0, 'var': False, 'doc': 'first line of its help'}, or None."""
+    """How to call `f`: {sig: '(value)', args: [...], req, opt, var, doc: first line of its help}, or None if it is not callable."""
     if not callable(f):
         return None
-    d = {'sig': None, 'req': None, 'opt': 0, 'var': False, 'doc': ''}
+    d = {'sig': None, 'args': None, 'req': None, 'opt': 0, 'var': False, 'doc': ''}
     try:
         doc = inspect.getdoc(f) or ''
     except Exception:
         doc = ''
     lines = [x.strip() for x in doc.split('\n') if x.strip()]
+    args = None
     try:
-        sig = inspect.signature(f)
-        d['sig'] = str(sig)
-        d['req'] = d['opt'] = 0
-        for p in sig.parameters.values():
-            if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
-                d['var'] = True
-            elif p.default is p.empty:
-                d['req'] += 1
-            else:
-                d['opt'] += 1
+        args = _args_from_sig(inspect.signature(f))
     except (TypeError, ValueError):                    # a built-in without a signature: use the list above, else the first help line
         owner = getattr(f, '__self__', None)
         known = _KNOWN.get('%s.%s' % (type(owner).__name__, getattr(f, '__name__', '')))
         m = _DOC_SIG.match(lines[0]) if lines else None
-        if known:
-            d['sig'] = known
-        elif m:
-            d['sig'] = m.group(1)
+        text = known or (m.group(1) if m else None)
+        if m and not known:
             lines = lines[1:]
-        counts = _count_text(d['sig']) if d['sig'] else None
-        if counts:
-            d['req'], d['opt'], d['var'] = counts
+        if text:
+            args = _args_from_text(text)
+            d['sig'] = text if args is None else None
+    if args is not None:
+        d['args'] = args
+        d['sig'] = _render(args)
+        d['req'] = sum(1 for a in args if a['k'] == 'req')
+        d['opt'] = sum(1 for a in args if a['k'] == 'opt')
+        d['var'] = any(a['k'] == 'var' for a in args)
     d['doc'] = (lines[0] if lines else '')[:140]
     return d
 

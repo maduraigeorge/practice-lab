@@ -157,7 +157,15 @@ export function indentKey(ta, e, w) {
 }
 
 /* ---- autocomplete popup content, used by the code editor ---- */
-/** "1 required + 1 optional argument", "no arguments", ... from the counts worked out by repl.py (d = { req, opt, var }). */
+/** What each argument means, from the details repl worked out: [[name, 'required' | 'optional, default 0' | ...], ...]. */
+export function argNotes(d) {
+  return ((d && d.args) || []).map(a => {
+    if (a.k === 'var') return [a.n, a.n.startsWith('**') ? 'any number of extra name=value arguments' : 'any number of extra values'];
+    if (a.k === 'req') return [a.n, 'required'];
+    return [a.n, `optional (default ${a.dv})` + (a.kwonly ? ', give it by name: ' + a.n + '=...' : '')];
+  });
+}
+/** "1 required + 1 optional argument", "no arguments", ... */
 export function argText(d) {
   if (!d || d.req == null) return '';
   const p = [];
@@ -166,11 +174,20 @@ export function argText(d) {
   if (d.var) p.push('any number of extra');
   return p.length ? p.join(' + ') + (d.req + d.opt > 1 || d.var ? ' arguments' : ' argument') : 'no arguments';
 }
-/** Rows [name, kind, detail] with the syntax beside each name, plus a help line for the highlighted row: syntax, argument count, what it does. */
+/** The help box for one suggestion: syntax, argument count, one line per argument, and what it does. */
+export function acTip(name, d) {
+  if (!d) return '';
+  const a = argText(d), notes = argNotes(d);
+  return `<p class="tip"><b>${esc(name + (d.sig || '(...)'))}</b>${a ? ' \u00b7 ' + esc(a) : ''}`
+    + notes.map(([n, t]) => `<span class="ar"><code>${esc(n)}</code> ${esc(t)}</span>`).join('')
+    + (d.doc ? `<span class="dc">${esc(d.doc)}</span>` : '') + '</p>';
+}
+/** Rows [name, kind, detail] with the syntax beside each name (hover a row for the explanation) and the help box of the highlighted row. */
 export function acHtml(items, active) {
-  const rows = items.map(([n, k, d], i) => `<div class="${i === active ? 'on' : ''}" data-i="${i}"><span>${esc(n)}${d && d.sig ? `<i>${esc(d.sig)}</i>` : ''}</span><small>${esc(k)}</small></div>`).join('');
-  const [n, , d] = items[active] || [];
-  if (!d) return rows;
-  const a = argText(d);
-  return rows + `<p class="tip"><b>${esc(n + (d.sig || '(...)'))}</b>${a ? ' · ' + esc(a) : ''}${d.doc ? `<br>${esc(d.doc)}` : ''}</p>`;
+  const rows = items.map(([n, k, d], i) => {
+    const tip = d ? [n + (d.sig || '(...)'), argText(d), ...argNotes(d).map(([x, t]) => `${x}: ${t}`), d.doc].filter(Boolean).join('\n') : '';
+    return `<div class="${i === active ? 'on' : ''}" data-i="${i}"${tip ? ` title="${esc(tip)}"` : ''}><span>${esc(n)}${d && d.sig ? `<i>${esc(d.sig)}</i>` : ''}</span><small>${esc(k)}</small></div>`;
+  }).join('');
+  const it = items[active];
+  return rows + (it ? acTip(it[0], it[2]) : '');
 }
