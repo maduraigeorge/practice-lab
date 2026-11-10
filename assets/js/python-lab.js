@@ -313,11 +313,106 @@ function syncScroll() { $('gut').style.transform = `translateY(${-$('code').scro
 const KEYWORDS = 'False None True and as assert break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield'.split(' ');
 const BUILTINS = 'abs all any bin bool chr dict dir divmod enumerate filter float format input int isinstance len list map max min next oct ord pow print range repr reversed round set sorted str sum tuple type zip open'.split(' ');
 const METHODS = {
-  str: 'capitalize count endswith find format index isalpha isdigit join lower lstrip replace rstrip split startswith strip title upper'.split(' '),
+  str: 'capitalize casefold center count encode endswith find format index isalnum isalpha isdigit islower isspace isupper join ljust lower lstrip partition removeprefix removesuffix replace rfind rindex rjust rsplit rstrip split splitlines startswith strip swapcase title upper zfill'.split(' '),
   list: 'append clear copy count extend index insert pop remove reverse sort'.split(' '),
-  dict: 'clear copy get items keys pop setdefault update values'.split(' '),
+  dict: 'clear copy fromkeys get items keys pop popitem setdefault update values'.split(' '),
+  tuple: 'count index'.split(' '),
+  set: 'add clear copy difference difference_update discard intersection intersection_update isdisjoint issubset issuperset pop remove symmetric_difference symmetric_difference_update union update'.split(' '),
+  int: 'bit_length conjugate to_bytes'.split(' '),
+  float: 'as_integer_ratio conjugate is_integer'.split(' '),
+  bool: 'bit_length conjugate'.split(' '),
 };
 const ALL_METHODS = [...new Set([].concat(...Object.values(METHODS)))].sort();
+
+/* Guess the type of the thing before the dot, so `t.` (a tuple) offers only tuple methods. Returns a METHODS key or null. */
+function exprEnd(text, from) {            // end of the expression starting at `from`: first newline / ; / # outside brackets and strings
+  let depth = 0, q = '';
+  for (let i = from; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '\\') i++; else if (c === q) q = ''; continue; }
+    if (c === '"' || c === "'") q = c;
+    else if ('([{'.includes(c)) depth++;
+    else if (')]}'.includes(c)) depth--;
+    else if (depth <= 0 && (c === '\n' || c === ';' || c === '#')) return i;
+  }
+  return text.length;
+}
+function hasTopLevel(s, test) {           // is there a character matching `test` outside brackets and strings?
+  let depth = 0, q = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) { if (c === '\\') i++; else if (c === q) q = ''; continue; }
+    if (c === '"' || c === "'") q = c;
+    else if ('([{'.includes(c)) depth++;
+    else if (')]}'.includes(c)) depth--;
+    else if (depth === 0 && test(c)) return true;
+  }
+  return false;
+}
+function typeOfExpr(e, text, depth = 0) {
+  e = e.trim();
+  if (!e || depth > 4) return null;
+  if (/\.(split|splitlines|rsplit)\([^()]*\)$/.test(e)) return 'list';
+  if (/\.(upper|lower|strip|lstrip|rstrip|title|join|replace|capitalize)\([^()]*\)$/.test(e)) return 'str';
+  if (/^(?:[rbfuRBFU]{0,2})("|')/.test(e)) return 'str';
+  if (/^[-+]?\d[\d_]*$/.test(e)) return 'int';
+  if (/^[-+]?(\d[\d_]*)?\.\d|^[-+]?\d[\d_]*\.|^[-+]?\d+[eE][-+]?\d+/.test(e) && !/[A-Za-z_]\w*\(/.test(e)) return 'float';
+  if (/^(True|False)$/.test(e)) return 'bool';
+  const call = e.match(/^([A-Za-z_]\w*)\(/);
+  if (call && e.endsWith(')')) {
+    const f = call[1];
+    if (['str', 'input', 'repr', 'format', 'chr', 'bin', 'oct'].includes(f)) return 'str';
+    if (['int', 'len', 'ord', 'round'].includes(f) && !(f === 'round' && e.includes(','))) return f === 'round' ? null : 'int';
+    if (f === 'float') return 'float';
+    if (f === 'bool') return 'bool';
+    if (['list', 'sorted', 'reversed'].includes(f)) return 'list';
+    if (f === 'tuple') return 'tuple';
+    if (f === 'set' || f === 'frozenset') return 'set';
+    if (f === 'dict') return 'dict';
+    return null;
+  }
+  const open = e[0];
+  if (open === '[') return e.endsWith(']') ? 'list' : null;
+  if (open === '{') {
+    if (!e.endsWith('}')) return null;
+    const inner = e.slice(1, -1).trim();
+    if (!inner) return 'dict';
+    return hasTopLevel(inner, c => c === ':') || /^\*\*/.test(inner) ? 'dict' : 'set';
+  }
+  if (open === '(') {
+    if (!e.endsWith(')')) return null;
+    const inner = e.slice(1, -1).trim();
+    if (!inner) return 'tuple';
+    if (hasTopLevel(inner, c => c === ',')) return 'tuple';
+    return /^[\w.]+$/.test(inner) ? typeOfExpr(inner, text, depth + 1) : null;   // (x) is just x
+  }
+  if (hasTopLevel(e, c => c === ',')) return 'tuple';                  // t = 1, 2, 3
+  if (/^[A-Za-z_]\w*$/.test(e)) return typeOfName(e, text, depth + 1);
+  return null;
+}
+function typeOfName(name, text, depth = 0) {
+  const re = new RegExp('(?:^|\\n)[ \\t]*' + name + '[ \\t]*(?::[^=\\n]+)?=(?!=)[ \\t]*', 'g');
+  let m, last = null;
+  while ((m = re.exec(text))) last = m.index + m[0].length;
+  if (last === null) return null;
+  return typeOfExpr(text.slice(last, exprEnd(text, last)), text, depth);
+}
+function receiverType(before) {           // `before` ends right before the dot
+  const text = before;
+  const m = text.match(/([A-Za-z_]\w*)$/);
+  if (m) return typeOfName(m[1], text);
+  const c = text[text.length - 1];
+  if (c === '"' || c === "'") return 'str';
+  if (c === ')' || c === ']' || c === '}') {
+    const close = c, open = { ')': '(', ']': '[', '}': '{' }[c];
+    let d = 0, i = text.length - 1;
+    for (; i >= 0; i--) { if (text[i] === close) d++; else if (text[i] === open && --d === 0) break; }
+    if (i < 0) return null;
+    const head = text.slice(0, i).match(/[A-Za-z_]\w*$/);
+    return typeOfExpr((head ? head[0] : '') + text.slice(i), text);       // literal, or a call such as list(...)
+  }
+  return null;
+}
 const ac = { items: [], i: 0, start: 0, open: false, nav: false };
 let escTab = false;         // Esc, then Tab, moves focus out of the editor (Tab otherwise indents)
 let charW = 8.4;
@@ -331,7 +426,10 @@ function acUpdate() {
   if (!word && !dotted) return acHide();
   if (!dotted && word.length < 1) return acHide();
   let pool;
-  if (dotted) pool = ALL_METHODS.map(n => [n, 'method']);
+  if (dotted) {
+    const ty = receiverType(before.slice(0, before.length - word.length - 1));
+    pool = ty && METHODS[ty] ? METHODS[ty].map(n => [n, ty + ' method']) : ALL_METHODS.map(n => [n, 'method']);
+  }
   else {
     const own = [...new Set(ta.value.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [])].filter(n => n !== word);
     pool = [...own.map(n => [n, 'yours']), ...BUILTINS.map(n => [n, 'built-in']), ...KEYWORDS.map(n => [n, 'keyword'])];
