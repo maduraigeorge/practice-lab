@@ -95,6 +95,30 @@ def _kind_of(obj):
 _DOC_SIG = re.compile(r'^[\w.]+(\(.*\))')
 
 
+# Python 3.12 (the version inside Pyodide) gives these built-in methods no signature of their own, so they are listed here.
+_KNOWN = {
+    'set.add': '(element, /)', 'set.clear': '()', 'set.copy': '()', 'set.difference': '(*others)', 'set.difference_update': '(*others)',
+    'set.discard': '(element, /)', 'set.intersection': '(*others)', 'set.intersection_update': '(*others)',
+    'set.isdisjoint': '(other, /)', 'set.issubset': '(other, /)', 'set.issuperset': '(other, /)', 'set.pop': '()',
+    'set.remove': '(element, /)', 'set.symmetric_difference': '(other, /)', 'set.symmetric_difference_update': '(other, /)',
+    'set.union': '(*others)', 'set.update': '(*others)',
+    'dict.clear': '()', 'dict.copy': '()', 'dict.items': '()', 'dict.keys': '()', 'dict.values': '()',
+    'dict.update': '(other=(), /, **kwargs)',
+}
+
+
+def _count_text(sig):
+    """Count required / optional arguments in a signature written as text, e.g. '(value, start=0, /)'. Returns (req, opt, var) or None."""
+    try:
+        a = ast.parse('def _f' + sig + ': pass').body[0].args
+    except SyntaxError:
+        return None
+    pos = a.posonlyargs + a.args
+    opt = len(a.defaults) + sum(1 for x in a.kw_defaults if x is not None)
+    req = len(pos) - len(a.defaults) + sum(1 for x in a.kw_defaults if x is None)
+    return req, opt, bool(a.vararg or a.kwarg)
+
+
 def _detail(f):
     """How to call `f`: {'sig': '(value, /)', 'req': 1, 'opt': 0, 'var': False, 'doc': 'first line of its help'}, or None."""
     if not callable(f):
@@ -116,11 +140,18 @@ def _detail(f):
                 d['req'] += 1
             else:
                 d['opt'] += 1
-    except (TypeError, ValueError):                    # some built-ins carry no signature: read it from the first help line
+    except (TypeError, ValueError):                    # a built-in without a signature: use the list above, else the first help line
+        owner = getattr(f, '__self__', None)
+        known = _KNOWN.get('%s.%s' % (type(owner).__name__, getattr(f, '__name__', '')))
         m = _DOC_SIG.match(lines[0]) if lines else None
-        if m:
+        if known:
+            d['sig'] = known
+        elif m:
             d['sig'] = m.group(1)
             lines = lines[1:]
+        counts = _count_text(d['sig']) if d['sig'] else None
+        if counts:
+            d['req'], d['opt'], d['var'] = counts
     d['doc'] = (lines[0] if lines else '')[:140]
     return d
 

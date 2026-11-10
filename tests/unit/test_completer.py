@@ -97,3 +97,21 @@ def test_signatures_for_builtin_types_and_functions(lab):
     assert lab.sigs('builtins')['len']['sig'] == '(obj, /)'
     assert lab.sigs('nonsense') == {}
     assert lab.details('t.') == {}                   # no program has run: nothing to suggest
+
+
+def test_builtins_without_their_own_signature_still_explain_their_arguments(lab, monkeypatch):
+    """Pyodide's Python 3.12 gives set.add and friends no signature; make this Python behave the same and check the fallback."""
+    import inspect
+    real = inspect.signature
+
+    def no_builtin_sigs(f, *a, **k):
+        if getattr(f, '__self__', None) is not None and not hasattr(f, '__wrapped__') and type(f).__name__ == 'builtin_function_or_method':
+            raise ValueError('no signature found for builtin')
+        return real(f, *a, **k)
+    monkeypatch.setattr(inspect, 'signature', no_builtin_sigs)
+    lab.run('s = set(range(10))\nd = {}\n')
+    add = lab.details('s.a')['add']
+    assert add['sig'] == '(element, /)' and add['req'] == 1 and add['opt'] == 0 and add['doc']
+    assert lab.details('s.un')['union']['var'] is True
+    keys = lab.details('d.k')['keys']
+    assert keys['sig'] == '()' and keys['req'] == 0                  # "no arguments"
