@@ -102,7 +102,8 @@ export function mountLabNav(current) {
   const embedded = window.parent !== window;
   const meta = n => (document.querySelector(`meta[name="${n}"]`) || {}).content;           // stamped at deploy time (tools/stamp_version.py)
   const ver = meta('app-version');
-  if (ver && ver !== 'dev') { const v = document.createElement('span'); v.className = 'ver'; v.textContent = 'v' + ver; v.title = 'Practice Lab ' + ver + ' · build ' + meta('app-build'); nav.after(v); }
+  const brand = document.querySelector('.brand');                                       // version sits right after the app name
+  if (ver && brand) { const v = document.createElement('span'); v.className = 'ver'; v.textContent = ver === 'dev' ? 'dev' : 'v' + ver; v.title = ver === 'dev' ? 'Local copy (the version is added when the site is deployed)' : 'Practice Lab ' + ver + ' · build ' + meta('app-build'); brand.firstChild.after(v); }
   for (const [id, icon, name] of LABS) {
     const a = document.createElement('a');
     a.href = `${id}-lab.html`; a.title = `${name} lab (Alt+${LABS.findIndex(l => l[0] === id) + 1})`;
