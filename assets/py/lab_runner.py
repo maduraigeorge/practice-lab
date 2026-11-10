@@ -609,6 +609,9 @@ def explain(rec, lines):
     return text
 
 
+LAST_NS = {}
+
+
 def run(code, stdin_text):
     lines = code.split('\n')
     steps = []
@@ -806,7 +809,8 @@ def run(code, stdin_text):
     except (SyntaxError, ValueError, RecursionError, MemoryError) as e:
         et = type(e).__name__
         return result(ok=False, error={'type': et, 'msg': getattr(e, 'msg', None) or str(e), 'line': getattr(e, 'lineno', None), 'hint': HINTS.get(et, HINTS['SyntaxError'])})
-    g = {'__name__': '__main__', 'input': fake_input}
+    global LAST_NS
+    g = LAST_NS = {'__name__': '__main__', 'input': fake_input}      # kept after the run: the editor's suggestions ask these live objects (completer.py)
     last_val = None
     err = None
     old_o, old_e = sys.stdout, sys.stderr

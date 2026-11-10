@@ -1,0 +1,99 @@
+"""Code suggestions (assets/py/completer.py): they come from the real objects left behind by the last run of the lab."""
+import json
+import runpy
+from pathlib import Path
+
+import pytest
+
+PY = Path(__file__).resolve().parents[2] / 'assets' / 'py'
+
+
+@pytest.fixture()
+def lab():
+    runner = runpy.run_path(str(PY / 'lab_runner.py'))
+    comp = runpy.run_path(str(PY / 'completer.py'))
+    comp['complete'].__globals__['_lab'] = runner['run'].__globals__      # what python-worker.js does
+
+    class Lab:
+        def run(self, code, stdin=''):
+            return json.loads(runner['run'](code, stdin))
+
+        def items(self, text):
+            return json.loads(comp['complete'](text))
+
+        def names(self, text):
+            return [i[0] for i in self.items(text)]
+
+        def details(self, text):
+            return {n: d for n, _, d in self.items(text)}
+
+        def ns(self):
+            return runner['run'].__globals__['LAST_NS']
+
+        def sigs(self, name):
+            return json.loads(comp['sigs'](name))
+    return Lab()
+
+
+def test_tuple_variable_suggests_only_tuple_methods(lab):
+    lab.run('t = (1, 2, 3)\n')
+    assert lab.names('t.') == ['count', 'index']
+    assert lab.names('t.c') == ['count']
+
+
+def test_suggestions_still_work_when_the_line_being_typed_is_an_error(lab):
+    lab.run('t = (1, 2, 3)\n')                       # the editor then runs "t = ...\nt." which cannot even be parsed
+    assert lab.run('t = (1, 2, 3)\nt.')['ok'] is False
+    assert lab.names('t.') == ['count', 'index']     # the objects of the last good run are still there
+
+
+def test_variables_defined_before_a_crash_are_available(lab):
+    assert lab.run('s = set(range(10))\ns.zzz\n')['ok'] is False
+    assert 'add' in lab.names('s.a')
+    assert lab.details('s.a')['add']['req'] == 1
+
+
+@pytest.mark.parametrize('code,var,expect', [
+    ('l = [1]', 'l', 'append'), ('d = {1: 2}', 'd', 'items'), ('s = {1, 2}', 's', 'union'),
+    ('x = "hi"', 'x', 'upper'), ('n = 5', 'n', 'bit_length')])
+def test_each_type_gets_its_own_methods(lab, code, var, expect):
+    lab.run(code + '\n')
+    got = lab.names(var + '.')
+    assert expect in got
+    assert 'count' not in got or var in ('l', 'x')
+
+
+def test_own_classes_and_modules(lab):
+    lab.run('import math\nclass Dog:\n    def bark(self, times=1): pass\nd = Dog()\n')
+    assert 'sqrt' in lab.names('math.sq')
+    d = lab.details('d.')['bark']
+    assert d['sig'] == '(times=1)' and d['req'] == 0 and d['opt'] == 1
+
+
+def test_names_come_from_the_program(lab):
+    lab.run('total = 3\ndef area(w, h=1, *rest):\n    return w\n')
+    assert lab.names('tot') == ['total']
+    d = lab.details('are')['area']
+    assert d['sig'] == '(w, h=1, *rest)' and d['req'] == 1 and d['opt'] == 1 and d['var'] is True
+    assert 'print' in lab.names('pri')
+    assert 'input' in lab.names('inp') and lab.details('inp')['input']['sig']      # the real input(), not the lab's stand-in
+
+
+def test_literals_and_unknown_names(lab):
+    assert lab.names('(1, 2).') == ['count', 'index']
+    assert 'upper' in lab.names('"abc".')
+    assert lab.names('nope.') == []
+
+
+def test_completion_never_runs_code(lab):
+    lab.run('hits = []\ndef f():\n    hits.append(1)\n    return (1, 2)\n')
+    assert lab.names('f().') == []
+    assert lab.ns()['hits'] == []                    # f() was never called
+
+
+def test_signatures_for_builtin_types_and_functions(lab):
+    assert lab.sigs('set')['add']['req'] == 1
+    assert lab.sigs('tuple')['count']['sig'] == '(value, /)'
+    assert lab.sigs('builtins')['len']['sig'] == '(obj, /)'
+    assert lab.sigs('nonsense') == {}
+    assert lab.details('t.') == {}                   # no program has run: nothing to suggest

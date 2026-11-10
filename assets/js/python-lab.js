@@ -1,7 +1,6 @@
 /* Python lab: editor, worker control, step player and renderers. */
 import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, acHtml } from './shared.js';
 import { initDock } from './dock.js';
-import { initShell } from './python-shell.js';
 import { parse } from './pseudo-parser.js';
 import { pythonToPseudo } from './python-to-pseudo.js';
 import { buildChart, renderChart, paintChart, pathEdges } from './pseudo-flow.js';
@@ -23,26 +22,26 @@ const EXAMPLES = {
 /* ---------- state ---------- */
 let worker = null, ready = false, busy = false, dirty = false, runId = 0, timeoutT = null, debounceT = null;
 let data = null, idx = 0, playT = null;
-let shell = null, shellRid = 0;
-const shellPending = new Map();   // shell requests waiting for the worker's answer
+let pyRid = 0;
+const pyPending = new Map();   // suggestion requests waiting for the worker's answer
 const F = { chart: null, els: null, nodes: [], edges: [], scale: 1 };   // flowchart of the current code + the chart node shown at every step
 
 /* ---------- worker ---------- */
-function shellCall(type, payload = {}) {
+function pyCall(type, payload = {}) {
   return new Promise((resolve, reject) => {
     if (!worker) return reject(new Error('Python is not running.'));
-    const rid = ++shellRid; shellPending.set(rid, { resolve, reject });
+    const rid = ++pyRid; pyPending.set(rid, { resolve, reject });
     worker.postMessage({ type, rid, ...payload });
   });
 }
 function startWorker() {
   ready = false;
-  shellPending.forEach(p => p.reject(new Error('restarted'))); shellPending.clear();     // the old worker will never answer
+  pyPending.forEach(p => p.reject(new Error('restarted'))); pyPending.clear();     // the old worker will never answer
   worker = new Worker(new URL('./python-worker.js', import.meta.url));
   worker.onmessage = e => {
     const m = e.data;
-    if (m.type === 'ready') { ready = true; setStatus('Ready', 'ok'); schedule(0); if (shell) shell.ready(); loadSigs(); }
-    else if (m.type === 'repl') { const p = shellPending.get(m.rid); if (p) { shellPending.delete(m.rid); p.resolve(m.data); } }
+    if (m.type === 'ready') { ready = true; setStatus('Ready', 'ok'); schedule(0); loadSigs(); }
+    else if (m.type === 'repl') { const p = pyPending.get(m.rid); if (p) { pyPending.delete(m.rid); p.resolve(m.data); } }
     else if (m.type === 'fail') setStatus('Could not load Python: ' + m.msg + ' (internet needed on first load)', 'err');
     else if (m.type === 'result' && m.id === runId) {
       endRun(); busy = false;
@@ -65,7 +64,6 @@ function killRun(error) {
   handle({ ok: false, steps: [], output: '', final: {}, error });
   startWorker();
 }
-function stopShell() { worker.terminate(); busy = false; dirty = false; endRun(); startWorker(); }
 $('stopBtn').onclick = () => killRun({ type: 'Stopped', msg: 'You stopped the program.', line: null, hint: 'If it was an infinite loop, check that something inside the loop changes the loop condition.' });
 function send() {
   busy = true; runId++;
@@ -428,12 +426,13 @@ function receiverType(before) {           // `before` ends right before the dot
 }
 const SIGS = {};   // real signatures of the built-in types and functions, asked from Python once it is ready: SIGS.set.add = { sig, req, opt, var, doc }
 function loadSigs() {
-  for (const t of [...Object.keys(METHODS), 'builtins']) shellCall('sigs', { text: t }).then(r => { SIGS[t] = JSON.parse(r); }).catch(() => {});
+  for (const t of [...Object.keys(METHODS), 'builtins']) pyCall('sigs', { text: t }).then(r => { SIGS[t] = JSON.parse(r); }).catch(() => {});
 }
 const ac = { items: [], i: 0, start: 0, open: false, nav: false };
 let escTab = false;         // Esc, then Tab, moves focus out of the editor (Tab otherwise indents)
 let charW = 8.4;
-function acHide() { ac.open = false; $('ac').style.display = 'none'; }
+let acReq = 0;      // numbers the suggestion requests so a late answer for old text is ignored
+function acHide() { ac.open = false; $('ac').style.display = 'none'; acReq++; }
 function acUpdate() {
   const ta = $('code'), pos = ta.selectionStart;
   if (ta.selectionEnd !== pos) return acHide();
@@ -451,15 +450,28 @@ function acUpdate() {
     const own = [...new Set(ta.value.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [])].filter(n => n !== word);
     pool = [...own.map(n => [n, 'yours']), ...BUILTINS.map(n => [n, 'built-in', (SIGS.builtins || {})[n]]), ...KEYWORDS.map(n => [n, 'keyword'])];
   }
-  const seen = new Set(), lw = word.toLowerCase();
-  const items = pool.filter(([n]) => !seen.has(n) && seen.add(n) && n !== word && n.toLowerCase().startsWith(lw)).slice(0, 30);
-  if (!items.length) return acHide();
-  ac.items = items; ac.i = 0; ac.start = pos - word.length; ac.open = true; ac.nav = false;
-  const lines = before.split('\n'), row = lines.length - 1, col = lines[row].length - word.length;
-  const el = $('ac');
-  el.style.left = Math.min(46 + 10 + col * charW - ta.scrollLeft, ta.clientWidth - 280) + 'px';
-  el.style.top = (PAD + (row + 1) * LH - ta.scrollTop) + 'px';
-  acRender(); el.style.display = 'block';
+  const lw = word.toLowerCase();
+  const pick = list => { const seen = new Set(); return list.filter(([n]) => !seen.has(n) && seen.add(n) && n !== word && n.toLowerCase().startsWith(lw)).slice(0, 40); };
+  function show(items) {
+    if (!items.length) return acHide();
+    ac.items = items; ac.i = 0; ac.start = pos - word.length; ac.open = true; ac.nav = false;
+    const lines = before.split('\n'), row = lines.length - 1, col = lines[row].length - word.length;
+    const el = $('ac');
+    el.style.left = Math.min(46 + 10 + col * charW - ta.scrollLeft, ta.clientWidth - 280) + 'px';
+    el.style.top = (PAD + (row + 1) * LH - ta.scrollTop) + 'px';
+    acRender(); el.style.display = 'block';
+  }
+  const quick = pick(pool);                        // instant: guessed from the text, signatures from the built-in tables
+  show(quick);
+  // then the real thing: ask the objects of the last run (their actual type, methods and signatures) and replace the guess
+  const id = ++acReq, line = before.slice(before.lastIndexOf('\n') + 1);
+  if (!ready) return;
+  pyCall('complete', { text: line }).then(r => {
+    if (id !== acReq || ac.nav || ta.selectionStart !== pos || ta.value.slice(0, pos) !== before) return;
+    const live = JSON.parse(r);
+    if (!live.length) return;
+    show(dotted ? pick(live) : pick([...live, ...quick]));
+  }).catch(() => {});
 }
 function acRender() {
   const el = $('ac');
@@ -528,7 +540,7 @@ sel.onchange = () => {
   $('code').value = ex.code; $('stdin').value = ex.stdin || ''; onEdit();
 };
 window.addEventListener('resize', positionBands);
-initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visual', output: 'p-output', input: 'p-input', shell: 'p-shell' }, t => {
+initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visual', output: 'p-output', input: 'p-input' }, t => {
   if (t === 'code') { positionBands(); syncScroll(); }
   if (t === 'steps') { const a = $('steps').querySelector('.step.active'); if (a) $('steps').scrollTop = a.offsetTop - $('steps').clientHeight / 2; }
 });
@@ -539,7 +551,6 @@ initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visu
   code = store.get('pyLab.code', code); stdin = store.get('pyLab.stdin', '');
   $('code').value = code; $('stdin').value = stdin;
   updateGutter(); syncScroll(); charW = measureChar($('code'));
-  shell = initShell({ call: shellCall, getStdin: () => $('stdin').value, stop: stopShell });
   startWorker();
 })();
 
@@ -547,14 +558,11 @@ initTabs({ code: 'p-code', result: 'p-result', steps: 'p-steps', visual: 'p-visu
 /* Sizing by content: the editor wants width, the flowchart is tall and narrow, Steps is a list, Visual (frames + arrows) wants width,
    Input is a few lines, Output is short unless there is an error. */
 const row = (...k) => ({ d: 'h', k }), col = (...k) => ({ d: 'v', k });
-const IO0 = row([1, 'p-input'], [1.5, 'p-output']);                      // input and output side by side
-const IO = row([1, 'p-input'], [1.5, 'p-output'], [1.8, 'p-shell']);     // ... plus the interactive shell
+const IO = row([1, 'p-input'], [1.5, 'p-output']);                       // input and output side by side
 initDock({
-  key: 'pyLab.dock6', def: innerWidth < 1150 ? 'Split screen' : 'Shell focus',      // half-screen windows start in the 2-column layout
-  panels: ['p-code', 'p-steps', 'p-visual', 'p-result', 'p-input', 'p-output', 'p-shell'],
+  key: 'pyLab.dock5', def: innerWidth < 1150 ? 'Split screen' : 'Classic',      // half-screen windows start in the 2-column layout
+  panels: ['p-code', 'p-steps', 'p-visual', 'p-result', 'p-input', 'p-output'],
   presets: {
-    // the interactive shell next to the code: type t = (1, 2) at >>> and t. completes from the real object
-    'Shell focus': row([1, col([1.7, 'p-code'], [1, IO0])], [1.1, 'p-shell'], [.8, col([1, 'p-result'], [1, 'p-steps'], [1, 'p-visual'])]),
     // code + I/O on the left, tall flowchart in the middle, steps over visual on the right
     'Classic': row([1.15, col([2.4, 'p-code'], [1, IO])], [.8, 'p-result'], [1.25, col([1, 'p-steps'], [1.15, 'p-visual'])]),
     // half-screen browser windows (about 900-1150 px): two columns so no box gets squeezed
@@ -562,12 +570,12 @@ initDock({
     // big flowchart, everything else small
     'Flowchart focus': row([1, col([2, 'p-code'], [1, IO])], [1.6, 'p-result'], [1, col([1, 'p-steps'], [1, 'p-visual'])]),
     // follow the values: visual and steps large, flowchart beside them
-    'Trace focus': col([1.5, row([.9, 'p-code'], [.7, 'p-result'], [1.5, 'p-visual'])], [1, row([1.2, 'p-steps'], [.6, 'p-input'], [1, 'p-output'], [1, 'p-shell'])]),
+    'Trace focus': col([1.5, row([.9, 'p-code'], [.7, 'p-result'], [1.5, 'p-visual'])], [1, row([1.2, 'p-steps'], [.6, 'p-input'], [1, 'p-output'])]),
     'Code focus': row([2, col([3, 'p-code'], [1, IO])], [1, col([1, 'p-steps'], [1, 'p-visual'], [.8, 'p-result'])]),
     // code on top, everything else in a row below (wide screens)
-    'Editor on top': col([1, row([2.6, 'p-code'], [.7, 'p-input'], [1.3, 'p-output'], [1.3, 'p-shell'])], [1.8, row([.8, 'p-result'], [1, 'p-steps'], [1.4, 'p-visual'])]),
+    'Editor on top': col([1, row([2.6, 'p-code'], [.7, 'p-input'], [1.3, 'p-output'])], [1.8, row([.8, 'p-result'], [1, 'p-steps'], [1.4, 'p-visual'])]),
     // narrow windows: one tall stack
-    'Stacked': col([1.9, 'p-code'], [1.2, 'p-shell'], [.5, row([1, 'p-input'], [1.4, 'p-output'])], [1.4, row([1, 'p-result'], [1, 'p-steps'])], [1.1, 'p-visual']),
+    'Stacked': col([1.9, 'p-code'], [.5, row([1, 'p-input'], [1.4, 'p-output'])], [1.4, row([1, 'p-result'], [1, 'p-steps'])], [1.1, 'p-visual']),
   },
 });
 installErrorHandlers(setStatus);

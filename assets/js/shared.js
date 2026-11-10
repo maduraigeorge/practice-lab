@@ -156,7 +156,7 @@ export function indentKey(ta, e, w) {
   return true;
 }
 
-/* ---- autocomplete popup content, shared by the code editor and the shell ---- */
+/* ---- autocomplete popup content, used by the code editor ---- */
 /** "1 required + 1 optional argument", "no arguments", ... from the counts worked out by repl.py (d = { req, opt, var }). */
 export function argText(d) {
   if (!d || d.req == null) return '';

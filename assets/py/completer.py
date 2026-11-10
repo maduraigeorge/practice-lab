@@ -1,79 +1,28 @@
-"""Interactive Python shell that runs inside the Pyodide worker (next to lab_runner.py, in its own namespace).
+"""Code suggestions that come from the REAL objects of the program that just ran (Pyodide worker, next to lab_runner.py).
 
-Every function returns a JSON string so the worker can pass it straight to the page:
-  push(line, stdin_text)  -> {more, out, err}      one line typed at the prompt (more = the statement continues)
-  complete(text)          -> [[name, kind], ...]   suggestions for the end of `text`, taken from the LIVE objects
-  reset()                 -> {text}                forget every variable, return the banner
-  banner()                -> {text}
+The lab re-runs the code as you type, so the variables of the last run are still alive (lab_runner.LAST_NS). Typing `t.` after
+`t = (1, 2, 3)` therefore asks the actual tuple what it can do, and each suggestion carries its real signature. Nothing is ever
+called while completing: names and attributes are only looked up.
+
+Both functions return a JSON string so the worker can pass it straight to the page:
+  complete(text)  -> [[name, kind, detail], ...]   suggestions for the end of `text` (the current line up to the cursor)
+  sigs(name)      -> {method: detail}              signatures of a built-in type ('set', 'str', ...) or of 'builtins'
+detail = {sig, req, opt, var, doc} or null.
 """
+import ast
 import builtins
-import code
-import contextlib
 import inspect
-import io
 import json
 import keyword
 import re
-import sys
-import ast
 
-NS = {}
-_con = None
-_queue = []          # lines for input(), taken from the lab's Input box
-_last_stdin = None
+_lab = {}            # the worker puts lab_runner's globals here; the live variables are _lab['LAST_NS']
 
 
-def banner():
-    return json.dumps({'text': 'Python %s (Pyodide) - an interactive shell.\n'
-                               'Your variables stay alive between lines. Press Tab to complete names and methods.' % sys.version.split()[0]})
+def _ns():
+    return _lab.get('LAST_NS') or {}
 
 
-def reset():
-    global _con, _last_stdin
-    NS.clear()
-    NS.update({'__name__': '__main__', '__doc__': None})
-    _con = code.InteractiveConsole(NS)
-    _last_stdin = None
-    return banner()
-
-
-_OWN_FRAME = re.compile(r'  File "[^"]*repl\.py", line \d+, in \w+\n(?:    .*\n)?')
-
-
-def _input(prompt=''):
-    if not _queue:
-        raise EOFError('No more input. Add a line to the Input box, then try again.')
-    value = _queue.pop(0)
-    print(str(prompt) + value)
-    return value
-
-
-def push(line, stdin_text=''):
-    global _last_stdin
-    if stdin_text != _last_stdin:                      # the Input box changed: start reading it from the top
-        _last_stdin = stdin_text
-        _queue[:] = stdin_text.split('\n') if stdin_text else []
-    out, err = io.StringIO(), io.StringIO()
-    old_input, old_hook = builtins.input, sys.displayhook
-    builtins.input, sys.displayhook = _input, sys.__displayhook__
-    try:
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            more = _con.push(line)
-    except SystemExit:
-        _con.resetbuffer()
-        more = False
-        err.write('The shell cannot be closed. Use Reset to start again.\n')
-    except BaseException as e:                         # e.g. KeyboardInterrupt-like errors: keep the shell alive
-        _con.resetbuffer()
-        more = False
-        err.write('%s: %s\n' % (type(e).__name__, e))
-    finally:
-        builtins.input, sys.displayhook = old_input, old_hook
-    text = _OWN_FRAME.sub('', err.getvalue())          # hide the shell's own input() frame from tracebacks
-    return json.dumps({'more': bool(more), 'out': out.getvalue(), 'err': text})
-
-
-# ---------------------------------------------------------------- completion
 _WORD = re.compile(r'[A-Za-z_]\w*$')
 _CHAIN = re.compile(r'[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$')
 _PAIRS = {')': '(', ']': '[', '}': '{'}
@@ -82,8 +31,9 @@ _PAIRS = {')': '(', ']': '[', '}': '{'}
 def _resolve(chain):
     """Look a dotted name such as `t` or `os.path` up WITHOUT calling anything. Returns (found, value)."""
     first, *rest = chain.split('.')
-    if first in NS:
-        obj = NS[first]
+    ns = _ns()
+    if first in ns:
+        obj = ns[first]
     elif hasattr(builtins, first):
         obj = getattr(builtins, first)
     else:
@@ -200,7 +150,9 @@ def _attrs(obj, word):
 
 def _names(word):
     seen, items = set(), []
-    for n, v in list(NS.items()):
+    for n, v in list(_ns().items()):
+        if getattr(v, '__name__', '') == 'fake_input':     # the lab's stand-in for input(): the real one is listed below
+            continue
         if not n.startswith('__') and n.lower().startswith(word.lower()) and n != word and n not in seen:
             seen.add(n)
             items.append([n, 'yours (%s)' % _kind_of(v), _detail(v)])
@@ -249,5 +201,3 @@ def complete(text):
         items = []
     return json.dumps(sorted(items, key=lambda x: (x[0].startswith('_'), not x[1].startswith('yours'), x[0].lower(), x[0]))[:80])
 
-
-reset()

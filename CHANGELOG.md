@@ -3,9 +3,9 @@
 ## 1.1.0
 
 ### Python lab
-* **Interactive shell** (`>>>` prompt) that keeps your variables between lines. Tab completion comes from the real objects
-  (`t = (1, 2, 3)` then `t.` offers only `count` and `index`), and each suggestion shows its syntax, how many arguments it takes
-  and what it does.
+* **Smart code suggestions.** The editor asks the real objects of the program that just ran, so after `t = (1, 2, 3)` typing `t.`
+  offers only `count` and `index`; the same for every type, your own classes and imported modules. Each suggestion shows its
+  syntax, how many arguments it takes and what it does (`index(value, start=0, stop=…, /)` · 1 required + 2 optional arguments).
 
 ### App
 * Version label (`v1.1.0`) in each lab header, and every deploy stamps a new build on all file URLs so browsers load the update
