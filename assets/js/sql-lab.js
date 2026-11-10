@@ -659,6 +659,16 @@ let downOnBackdrop = false;
 dlg.addEventListener('mousedown', e => { downOnBackdrop = e.target === dlg; });
 dlg.addEventListener('click', e => { if (e.target === dlg && downOnBackdrop) dlg.close(); });
 
+/* the empty boxes say "Loading SQL engine…" (with a spinner) until the sample database is ready */
+const loadSaved = {};
+function setLoading(on) {
+  for (const id of ['result', 'visual', 'log']) {
+    const el = $(id);
+    if (on) { loadSaved[id] = el.innerHTML; el.innerHTML = '<span class="empty loading"><i class="spin" aria-hidden="true"></i>Loading SQL engine… the first load takes a few seconds</span>'; }
+    else if (el.querySelector('.loading')) el.innerHTML = loadSaved[id] || '';
+  }
+}
+
 (async function boot() {
   $('sql').value = store.get('sqlLab.sql', 'SELECT * FROM customers;');
   $('auto').checked = store.get('sqlLab.auto', '1') === '1';
@@ -667,6 +677,7 @@ dlg.addEventListener('click', e => { if (e.target === dlg && downOnBackdrop) dlg
   const savedType = store.get('sqlLab.type', 'postgres'), t = savedType === 'mysql' ? 'mysql' : 'postgres'; document.querySelector(`input[name=dbt][value=${t}]`).checked = true; $('f-port').placeholder = t === 'mysql' ? '3306' : '5432';
   updateEditor(); charW = measureChar($('sql')); fillExamples(); analyzeNow();
   await detectBridge(); checkBridge(); setConn();
+  setLoading(true);
   try {
     const ddl = store.get('sqlLab.ddl', '') || (SAMPLE_DDL + sampleData());
     if (!store.get('sqlLab.ddl', '')) store.set('sqlLab.sample', '1');
@@ -674,13 +685,14 @@ dlg.addEventListener('click', e => { if (e.target === dlg && downOnBackdrop) dlg
     setStatus('Sandbox ready', 'ok'); schedule(0);
     if (!store.get('sqlLab.seen', '')) { store.set('sqlLab.seen', '1'); openDlg(hasBridge() ? 'live' : 'file'); }
   } catch (e) { setStatus(String(e.message || e), 'err'); }
+  finally { setLoading(false); }
 })();
 
 /* ---------- dockable layout ---------- */
 initDock({
   key: 'sqlLab.dock2', def: 'Classic', panels: ['p-code', 'p-steps', 'p-result', 'p-output', 'p-visual'],
   presets: {
-    'Classic': { d: 'h', k: [[1.2, { d: 'v', k: [[.8, 'p-code'], [1.1, 'p-result'], [.55, 'p-output']] }], [1, { d: 'v', k: [[1, 'p-steps'], [1.65, 'p-visual']] }]] },
+    'Classic': { d: 'h', k: [[1.2, { d: 'v', k: [[.8, 'p-code'], [1.1, 'p-result'], [.4, 'p-output']] }], [1, { d: 'v', k: [[1, 'p-steps'], [1.65, 'p-visual']] }]] },
     'Code focus': { d: 'h', k: [[2, { d: 'v', k: [[1.3, 'p-code'], [1, 'p-result']] }], [1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual'], [.6, 'p-output']] }]] },
     'Stacked': { d: 'v', k: [[.9, 'p-code'], [1.2, { d: 'h', k: [[1, 'p-result'], [1, 'p-steps']] }], [1.1, { d: 'h', k: [[1.4, 'p-visual'], [1, 'p-output']] }]] },
     'Three columns': { d: 'h', k: [[1, { d: 'v', k: [[1, 'p-code'], [1, 'p-output']] }], [1.2, { d: 'v', k: [[1, 'p-result'], [1, 'p-steps']] }], [1, 'p-visual']] },

@@ -337,7 +337,7 @@ $('code').addEventListener('keydown', e => {
 
 /* ================================================================== examples, practice, boot */
 const sel = $('examples');
-sel.innerHTML = '<option value="">Examples &amp; practice…</option>' +
+sel.innerHTML = '<option value="">Examples…</option>' +
   '<optgroup label="Examples">' + EXAMPLES.map(x => `<option value="e:${esc(x.id)}">${esc(x.title)}</option>`).join('') + '</optgroup>' +
   '<optgroup label="Practice – your program is checked">' + PRACTICE.map(x => `<option value="p:${esc(x.id)}">🎯 ${esc(x.title)}</option>`).join('') + '</optgroup>';
 sel.onchange = () => {

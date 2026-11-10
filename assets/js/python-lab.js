@@ -27,6 +27,20 @@ let pyRid = 0;
 const pyPending = new Map();   // suggestion requests waiting for the worker's answer
 const F = { chart: null, els: null, nodes: [], edges: [], scale: 1 };   // flowchart of the current code + the chart node shown at every step
 
+/* ---------- loading state ---------- */
+let booted = false;            // the first Python start has finished (or failed); later restarts keep the results on screen
+const loadSaved = {};
+function setLoading(on) {      // the empty boxes say "Loading Python…" (with a spinner) until the worker is ready
+  for (const id of ['steps', 'visual', 'output']) {
+    const el = $(id);
+    if (on) { loadSaved[id] = el.innerHTML; el.innerHTML = '<span class="empty loading"><i class="spin" aria-hidden="true"></i>Loading Python… the first load takes a few seconds</span>'; }
+    else if (el.querySelector('.loading')) el.innerHTML = loadSaved[id] || '';
+  }
+  const c = $('chartEmpty');
+  if (on) { loadSaved.chart = c.textContent; c.textContent = 'Loading Python…'; }
+  else if (c.textContent === 'Loading Python…') c.textContent = loadSaved.chart;
+}
+
 /* ---------- worker ---------- */
 function pyCall(type, payload = {}) {
   return new Promise((resolve, reject) => {
@@ -37,13 +51,14 @@ function pyCall(type, payload = {}) {
 }
 function startWorker() {
   ready = false;
+  if (!booted) setLoading(true);
   pyPending.forEach(p => p.reject(new Error('restarted'))); pyPending.clear();     // the old worker will never answer
   worker = new Worker(new URL('./python-worker.js', import.meta.url));
   worker.onmessage = e => {
     const m = e.data;
-    if (m.type === 'ready') { ready = true; setStatus('Ready', 'ok'); schedule(0); loadSigs(); }
+    if (m.type === 'ready') { ready = true; booted = true; setLoading(false); setStatus('Ready', 'ok'); schedule(0); loadSigs(); }
     else if (m.type === 'repl') { const p = pyPending.get(m.rid); if (p) { pyPending.delete(m.rid); p.resolve(m.data); } }
-    else if (m.type === 'fail') setStatus('Could not load Python: ' + m.msg + ' (internet needed on first load)', 'err');
+    else if (m.type === 'fail') { booted = true; setLoading(false); setStatus('Could not load Python: ' + m.msg + ' (internet needed on first load)', 'err'); }
     else if (m.type === 'result' && m.id === runId) {
       endRun(); busy = false;
       let d;

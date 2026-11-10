@@ -84,7 +84,7 @@ button.primary:hover:not(:disabled) { background: var(--accent-bright); filter: 
 button.primary:active:not(:disabled) { box-shadow: 0 0 0 var(--accent); transform: translateY(3px); }
 button.danger { background: var(--bad); border-color: var(--bad); color: #fff; box-shadow: 0 3px 0 #b3402c; }
 button.danger:hover:not(:disabled) { background: var(--bad); filter: brightness(1.07); }
-button.mini { font-size: 10.5px; padding: 1px 9px 0; min-height: 21px; border-width: 1.5px; box-shadow: 0 1px 0 var(--accent-dark); }
+button.mini { font-size: 11px; padding: 2px 10px 1px; min-height: 24px; border-width: 1.5px; box-shadow: 0 1px 0 var(--accent-dark); }
 .chk { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; cursor: pointer; font-weight: 600; }
 input[type=checkbox], input[type=radio], input[type=range] { accent-color: var(--accent-bright); }
 
@@ -98,12 +98,12 @@ input[type=checkbox], input[type=radio], input[type=range] { accent-color: var(-
 main { display: grid; gap: 8px; padding: 0 8px 10px; flex: 1; min-height: 0; }
 .panel { --pc: var(--accent); background: var(--panel); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
   display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
-.panel > h2 { margin: 0; padding: 0 10px; height: 28px; flex: none; display: flex; align-items: center; gap: 6px; font: 700 11.5px/1 var(--font-title);
+.panel > h2 { margin: 0; padding: 0 10px; height: 28px; flex: none; display: flex; align-items: center; gap: 6px; font: 700 12.5px/1 var(--font-title);
   text-transform: uppercase; letter-spacing: .07em; color: color-mix(in srgb, var(--pc) 78%, var(--text));
   background: linear-gradient(90deg, color-mix(in srgb, var(--pc) 17%, transparent), transparent 80%); border-bottom: 2px solid color-mix(in srgb, var(--pc) 30%, var(--border)); white-space: nowrap; }
 .panel > h2 .num { background: var(--pc); color: #fff; width: 17px; height: 17px; border-radius: 50%; display: inline-grid; place-items: center;
   font: 700 10px/1 var(--font-title); letter-spacing: 0; flex: none; box-shadow: 0 1.5px 0 color-mix(in srgb, var(--pc) 60%, #000); }
-.panel > h2 .right { margin-left: auto; text-transform: none; letter-spacing: 0; font: 500 11px/1 var(--font-text); color: var(--muted);
+.panel > h2 .right { margin-left: auto; text-transform: none; letter-spacing: 0; font: 500 11.5px/1 var(--font-text); color: var(--muted);
   display: flex; gap: 6px; align-items: center; overflow: hidden; text-overflow: ellipsis; }
 #p-code { --pc: var(--c-code); } #p-result { --pc: var(--c-result); } #p-steps { --pc: var(--c-steps); }
 #p-visual { --pc: var(--c-visual); } #p-output { --pc: var(--c-output); } #p-flow { --pc: var(--c-flow); } #p-trace { --pc: var(--c-trace); }
@@ -178,3 +178,9 @@ main { display: grid; gap: 8px; padding: 0 8px 10px; flex: 1; min-height: 0; }
 @media (max-width: 380px) { #tabs button { font-size: 9.5px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 .brand .ver { font: 600 10px/1 var(--font-text); text-transform: none; letter-spacing: 0; color: var(--accent-bright); border: 1.5px solid var(--border); border-radius: 99px; padding: 2px 6px 1px; align-self: center; }
+
+/* "Loading …" placeholder shown in the empty boxes until the engine is ready (all labs) */
+.empty.loading { display: inline-flex; align-items: center; gap: 8px; font-style: normal; }
+.spin { width: 14px; height: 14px; flex: none; border: 2px solid var(--border); border-top-color: var(--accent-bright); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-top-color: var(--accent-bright); } }

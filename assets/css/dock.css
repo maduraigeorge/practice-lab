@@ -16,7 +16,7 @@ main.dk { display: flex; flex-direction: column; gap: 0; }
 .panel > h2 { cursor: grab; user-select: none; }
 .panel > h2 .wc { margin-left: auto; display: inline-flex; gap: 3px; }
 .panel > h2 .right + .wc { margin-left: 6px; }
-.wb { padding: 0 6px !important; min-height: 0 !important; height: 18px; line-height: 1; font-size: 12px; border-radius: 99px !important; color: var(--muted) !important; background: transparent !important; border-color: transparent !important; box-shadow: none !important; text-transform: none; }
+.wb { padding: 0 8px !important; min-height: 0 !important; height: 24px; min-width: 26px; line-height: 1; font-size: 14px; border-radius: 99px !important; color: var(--muted) !important; background: transparent !important; border-color: transparent !important; box-shadow: none !important; text-transform: none; }
 .wb:hover { color: var(--text) !important; background: var(--chip) !important; }
 .dk-zone { position: fixed; z-index: 60; pointer-events: none; background: var(--accent-soft); border: 2px dashed var(--accent); border-radius: 10px; display: none; }
 .dk-ghost { position: fixed; z-index: 61; pointer-events: none; padding: 3px 11px; background: var(--accent); color: #fff; border-radius: 8px; font-size: 12px; opacity: .92; }
