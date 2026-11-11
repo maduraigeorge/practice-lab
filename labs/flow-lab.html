@@ -14,21 +14,20 @@
 <link rel="stylesheet" href="../assets/css/dock.css">
 <link rel="stylesheet" href="../assets/css/flow-lab.css">
 </head>
-<body>
+<body data-lab="flow">
 <header>
-  <span class="brand"><span class="by">@maduraigeorge</span></span>
+  <span class="brand">Practice Lab <span class="by">@maduraigeorge</span></span>
   <nav class="labnav" aria-label="Labs"></nav>
-  <span id="status" class="status busy" role="status" aria-live="polite">Starting…</span>
   <span class="spacer"></span>
-  <select id="examples" aria-label="Examples and practice" title="Examples and practice exercises"></select>
+  <span id="status" class="status busy" role="status" aria-live="polite">Starting…</span>
   <span class="popwrap">
-    <button id="inputBtn" title="Values for INPUT – one per line, or separated by spaces">⌨ Input</button>
-    <div class="popover" id="inputPop" hidden>
-      <label for="inputs">Values for <code class="i">INPUT</code> – one per line or separated by spaces</label>
-      <textarea id="inputs" spellcheck="false" placeholder="e.g. 7"></textarea>
+    <button id="gearBtn" class="gear" type="button" title="Settings: examples, layout, clear" aria-label="Settings" aria-haspopup="true">⚙</button>
+    <div class="popover settings" id="gearPop" hidden>
+      <div class="setrow"><span>Examples &amp; practice</span><select id="examples" aria-label="Examples and practice" title="Examples and practice exercises"></select></div>
+      <div class="setrow" id="setLayoutRow"><span>Layout</span></div>
+      <div class="setrow"><button id="reset" title="Clear the editor">Clear code</button></div>
     </div>
   </span>
-  <button id="reset" title="Clear the editor">Clear</button>
 </header>
 
 <main>
@@ -73,6 +72,11 @@
     <div class="body" id="trace" hidden></div>
   </section>
 
+  <section class="panel" id="p-input">
+    <h2><span class="num">6</span>Input <span class="right" title="Values for INPUT: one per line, or separated by spaces">one per line</span></h2>
+    <textarea class="stdin-box mono" id="inputs" spellcheck="false" aria-label="Values for INPUT, one per line or separated by spaces" placeholder="e.g. 7"></textarea>
+  </section>
+
   <section class="panel" id="p-output">
     <h2><span class="num">5</span>Output <span class="right" id="goalState"></span></h2>
     <div class="body" id="output"><span class="empty">Nothing shown yet.</span></div>
@@ -84,6 +88,7 @@
   <button data-t="flow"><b>⬡</b>Chart</button>
   <button data-t="steps"><b>☰</b>Steps</button>
   <button data-t="visual"><b>▦</b>Visual</button>
+  <button data-t="input"><b>⌨</b>Input</button>
   <button data-t="output" id="tabOut"><b>▤</b>Output</button>
 </nav>
 

@@ -1,5 +1,5 @@
 /* Flowchart & pseudocode lab: editor, live flowchart, step player, variables / trace table, practice checker. */
-import { indentKey, pyNextIndent, $, esc, md, store, initTabs, installErrorHandlers, measureChar, mountLabNav, initPopover, toast } from './shared.js';
+import { indentKey, pyNextIndent, $, esc, md, store, initTabs, installErrorHandlers, measureChar, mountLabNav, toast, initSettings } from './shared.js';
 import { initDock } from './dock.js';
 import { parse, PseudoError, KEYWORDS, FUNCTIONS } from './pseudo-parser.js';
 import { pythonToPseudo, looksLikePython } from './python-to-pseudo.js';
@@ -8,7 +8,6 @@ import { run, parseInputs, fmtVal } from './pseudo-run.js';
 import { EXAMPLES, PRACTICE, checkOutput } from './flow-exercises.js';
 
 mountLabNav('flow');
-initPopover($('inputBtn'), $('inputPop'));
 const LH = 20, PAD = 8;
 
 const S = { program: null, chart: null, els: null, result: null, steps: [], stepEdges: [], idx: 0, playT: null, scale: 1, auto: true,
@@ -349,21 +348,24 @@ sel.onchange = () => {
 };
 $('reset').onclick = () => { $('code').value = ''; $('inputs').value = ''; S.goal = null; sel.value = ''; onEdit(); $('code').focus(); };
 
-const setTab = initTabs({ code: 'p-code', flow: 'p-flow', steps: 'p-steps', visual: 'p-visual', output: 'p-output' }, t => {
+const setTab = initTabs({ code: 'p-code', flow: 'p-flow', steps: 'p-steps', visual: 'p-visual', output: 'p-output', input: 'p-input' }, t => {
   if (t === 'code') syncScroll();
   if (t === 'flow') { if (S.auto) fitWidth(); centerOn(S.steps[S.idx] && S.steps[S.idx].node); }
 });
 
+const IO = { d: 'h', k: [[1, 'p-input'], [1.5, 'p-output']] };      // input and output side by side
 initDock({
-  key: 'flowLab.dock1', def: 'Classic', panels: ['p-code', 'p-flow', 'p-steps', 'p-visual', 'p-output'],
+  key: 'flowLab.dock2', def: 'Classic', panels: ['p-code', 'p-flow', 'p-steps', 'p-visual', 'p-input', 'p-output'],
   presets: {
-    'Classic': { d: 'h', k: [[1, { d: 'v', k: [[1.5, 'p-code'], [.8, 'p-output']] }], [1.35, 'p-flow'], [1.1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual']] }]] },
-    'Chart focus': { d: 'h', k: [[.8, { d: 'v', k: [[1.4, 'p-code'], [.9, 'p-output']] }], [2.3, 'p-flow'], [1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual']] }]] },
-    'Stacked': { d: 'v', k: [[1.3, { d: 'h', k: [[1, 'p-code'], [1.3, 'p-flow']] }], [1, { d: 'h', k: [[1.2, 'p-steps'], [1, 'p-visual'], [.9, 'p-output']] }]] },
-    'Code + chart': { d: 'h', k: [[1, { d: 'v', k: [[2, 'p-code'], [1, 'p-output']] }], [1.7, { d: 'v', k: [[2, 'p-flow'], [1.1, { d: 'h', k: [[1, 'p-steps'], [1, 'p-visual']] }]] }]] },
-    'Wide chart': { d: 'v', k: [[1.8, 'p-flow'], [1, { d: 'h', k: [[1, 'p-code'], [1, 'p-steps'], [1, 'p-visual'], [.8, 'p-output']] }]] },
+    'Classic': { d: 'h', k: [[1, { d: 'v', k: [[1.5, 'p-code'], [.8, IO]] }], [1.35, 'p-flow'], [1.1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual']] }]] },
+    'Chart focus': { d: 'h', k: [[.8, { d: 'v', k: [[1.4, 'p-code'], [.9, IO]] }], [2.3, 'p-flow'], [1, { d: 'v', k: [[1, 'p-steps'], [1, 'p-visual']] }]] },
+    'Stacked': { d: 'v', k: [[1.3, { d: 'h', k: [[1, 'p-code'], [1.3, 'p-flow']] }], [1, { d: 'h', k: [[1.2, 'p-steps'], [1, 'p-visual'], [.7, 'p-input'], [.9, 'p-output']] }]] },
+    'Code + chart': { d: 'h', k: [[1, { d: 'v', k: [[2, 'p-code'], [1, IO]] }], [1.7, { d: 'v', k: [[2, 'p-flow'], [1.1, { d: 'h', k: [[1, 'p-steps'], [1, 'p-visual']] }]] }]] },
+    'Wide chart': { d: 'v', k: [[1.8, 'p-flow'], [1, { d: 'h', k: [[1, 'p-code'], [1, 'p-steps'], [1, 'p-visual'], [.7, 'p-input'], [.8, 'p-output']] }]] },
   },
 });
+$('setLayoutRow').appendChild($('layoutSel'));        // the Layout list lives in the settings menu
+initSettings();
 installErrorHandlers(setStatus);
 
 (function boot() {

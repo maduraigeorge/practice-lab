@@ -1,5 +1,5 @@
 /* SQL lab: connection dialog, editor, runner, explainer UI, schema diagram, file import UI. */
-import { $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, makeLoading } from './shared.js';
+import { $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, makeLoading, initSettings } from './shared.js';
 import { initDock } from './dock.js';
 import { maskSQL, splitStatements, analyze, KW, FUNCS } from './sql-parse.js';
 import { prepareImport } from './sql-import.js';
@@ -694,5 +694,7 @@ initDock({
     'Schema focus': { d: 'h', k: [[1, { d: 'v', k: [[1, 'p-code'], [1, 'p-result'], [.5, 'p-output']] }], [1.4, { d: 'v', k: [[1.6, 'p-visual'], [1, 'p-steps']] }]] },
   },
 });
+$('setLayoutRow').appendChild($('layoutSel'));        // the Layout list lives in the settings menu
+initSettings();
 installErrorHandlers(setStatus);
 

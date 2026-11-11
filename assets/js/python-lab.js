@@ -1,5 +1,5 @@
 /* Python lab: editor, worker control, step player and renderers. */
-import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, makeLoading } from './shared.js';
+import { indentKey, pyNextIndent, $, esc, md, store, toast, initTabs, installErrorHandlers, measureChar, mountLabNav, makeLoading, initSettings } from './shared.js';
 import { acHtml, acTip, isCallContext, buildCall, snipValid, snipNext } from './py-suggest.js';
 import { initDock } from './dock.js';
 import { parse } from './pseudo-parser.js';
@@ -221,7 +221,44 @@ function renderCards(s) {
   if (inFn && s.glob && Object.values(s.glob).some(o => o.k !== 'fn')) h += '<div class="sec">Global variables</div>' + varsHTML(s.glob, [], true);
   $('visual').innerHTML = h;
 }
-function renderVisual(s) { if (vizMode === 'tutor') renderTutor(s); else renderCards(s); }
+function renderVisual(s) { if (vizMode === 'tutor') renderTutor(s); else if (vizMode === 'trace') renderTrace(); else renderCards(s); }
+
+/* ---------- Trace table: one row per step, one column per variable (rows appear as you step; click a row to jump to it) ---------- */
+const TRACE_MAX = 600;
+let traceFor = null;                                   // the run the table was built for
+function traceCols() {
+  const names = [], seen = new Set();
+  for (const s of data.steps.slice(0, TRACE_MAX)) for (const [n, o] of Object.entries(s.after || {})) if (o.k !== 'fn' && !seen.has(n)) { seen.add(n); names.push(n); }
+  return names;
+}
+function buildTrace() {
+  const names = traceCols(), box = $('visual');
+  const tb = mk('table', 'trace mono'), head = tb.createTHead().insertRow();
+  ['#', 'Line', ...names, 'Output'].forEach(h => head.appendChild(mk('th', '', h)));
+  const body = tb.createTBody();
+  data.steps.slice(0, TRACE_MAX).forEach((s, i) => {
+    const r = body.insertRow(); r.dataset.i = i;
+    const where = s.kind === 'call' ? 'call ' + s.fn : s.kind === 'return' ? 'return' : s.kind === 'end' ? 'end' : 'L' + s.line;
+    const cells = [String(i + 1), where, ...names.map(n => (s.after && n in s.after ? s.after[n].r : '')), (s.printed || '').replace(/\n$/, '')];
+    cells.forEach((t, k) => {
+      const td = r.insertCell(); td.textContent = t; td.title = k === 1 && s.src ? s.src.trim() : t;
+      if (k === 0) td.className = 'n';
+      else if (k >= 2 && k < 2 + names.length && (s.changed || []).includes(names[k - 2])) td.className = 'chg';
+    });
+  });
+  box.replaceChildren(tb);
+  if (data.steps.length > TRACE_MAX) box.appendChild(mk('div', 'empty more-note', '\u2026more steps not shown (limit ' + TRACE_MAX + ').'));
+  tb.addEventListener('click', e => { const r = e.target.closest('tbody tr'); if (r) { stopPlay(); select(+r.dataset.i); } });
+  traceFor = data;
+}
+function renderTrace() {
+  if (tutorRO) { tutorRO.disconnect(); tutorRO = null; }
+  const box = $('visual');
+  if (traceFor !== data || !box.querySelector('table.trace')) buildTrace();
+  const rows = box.querySelectorAll('tbody tr');
+  rows.forEach((r, i) => { r.hidden = i > idx; r.classList.toggle('cur', i === idx); });
+  const cur = rows[Math.min(idx, rows.length - 1)]; if (cur) cur.scrollIntoView({ block: 'nearest' });
+}
 
 /* ---------- Frames & Objects view (in the spirit of Python Tutor): frames on the left, heap objects on the right, arrows between ---------- */
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -618,4 +655,6 @@ initDock({
     'Stacked': col([1.9, 'p-code'], [.5, row([1, 'p-input'], [1.4, 'p-output'])], [1.4, row([1, 'p-result'], [1, 'p-steps'])], [1.1, 'p-visual']),
   },
 });
+$('setLayoutRow').appendChild($('layoutSel'));        // the Layout list lives in the settings menu
+initSettings();
 installErrorHandlers(setStatus);

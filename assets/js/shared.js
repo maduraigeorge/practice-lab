@@ -106,10 +106,10 @@ export function mountLabNav(current) {
   if (ver && brand) { const v = document.createElement('span'); v.className = 'ver'; v.textContent = ver === 'dev' ? 'dev' : 'v' + ver; v.title = ver === 'dev' ? 'Local copy (the version is added when the site is deployed)' : 'Practice Lab ' + ver + ' · build ' + meta('app-build'); brand.appendChild(v); }
   for (const [id, icon, name] of LABS) {
     const a = document.createElement('a');
-    a.href = `${id}-lab.html`; a.title = `${name} lab (Alt+${LABS.findIndex(l => l[0] === id) + 1})`;
-    a.setAttribute('aria-label', `${name} lab`);                                       // inactive tabs show only the icon: the name stays for screen readers and the tooltip
+    a.href = `${id}-lab.html`; a.title = `${name} (Alt+${LABS.findIndex(l => l[0] === id) + 1})`;
+    a.setAttribute('aria-label', name);                                       // inactive tabs show only the icon: the name stays for screen readers and the tooltip
     a.textContent = `${icon} `;
-    const label = document.createElement('span'); label.textContent = `${name} lab`; a.appendChild(label);
+    const label = document.createElement('span'); label.textContent = name; a.appendChild(label);
     if (id === current) { a.className = 'on'; a.setAttribute('aria-current', 'page'); }
     a.addEventListener('click', e => {
       if (id === current) return e.preventDefault();
@@ -185,4 +185,14 @@ export function makeLoading() {
       saved.clear();
     },
   };
+}
+
+/** The gear button in the header: opens the settings menu (examples, layout, clear ... whatever each lab puts in #gearPop).
+ *  The menu closes when a list value is chosen or a button in it is pressed. */
+export function initSettings() {
+  const btn = $('gearBtn'), pop = $('gearPop');
+  if (!btn || !pop) return;
+  const close = initPopover(btn, pop);
+  pop.addEventListener('change', close);
+  pop.addEventListener('click', e => { if (e.target.closest('button')) close(); });
 }

@@ -151,3 +151,18 @@ def test_an_unreadable_signature_means_no_signature_at_all(lab, monkeypatch):
     monkeypatch.setattr(inspect, 'signature', lambda *a, **k: (_ for _ in ()).throw(ValueError('no signature')))
     d = lab.detail_of(f)
     assert d['sig'] is None and d['args'] is None and d['req'] is None      # so the editor adds no brackets and guesses no placeholders
+
+
+def test_print_is_described_even_when_python_gives_it_no_signature(lab, monkeypatch):
+    """Python 3.10 documents print as print(value, ..., sep=' ', ...), which is not a valid signature: the known table is used."""
+    import inspect
+    real = inspect.signature
+
+    def fail_for_print(f, *a, **k):
+        if getattr(f, '__name__', '') == 'print':
+            raise ValueError('no signature found for builtin')
+        return real(f, *a, **k)
+    monkeypatch.setattr(inspect, 'signature', fail_for_print)
+    d = lab.detail_of(print)
+    assert d['sig'] == "(*args, sep=' ', end='\\n', file=None, flush=False)"
+    assert d['req'] == 0 and d['opt'] == 4 and d['var'] is True

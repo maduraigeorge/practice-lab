@@ -121,7 +121,7 @@ test('explanations substitute real values', () => {
 
 /* ------------------------------------------------------------ flowchart layout */
 test('layout: all nodes inside the drawing, decisions have Yes and No exits', () => {
-  const p = parse(EXAMPLES.map(e => e.code).join('\n'));
+  const p = parse(EXAMPLES.filter(e => !looksLikePython(e.code)).map(e => e.code).join('\n'));      // the Python examples are not pseudocode
   const chart = buildChart(p);
   for (const n of chart.nodes) { assert.ok(n.x >= 0 && n.y >= 0 && n.x + n.w <= chart.W + 0.5 && n.y + n.h <= chart.H + 0.5, `${n.text} outside`); }
   for (const d of chart.nodes.filter(n => n.kind === 'decision')) {

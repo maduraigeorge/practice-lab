@@ -59,12 +59,6 @@
 .cell { text-align: center; }
 .cell .v { border: 1px solid var(--border); background: var(--panel); border-radius: 7px; padding: 1px 8px; min-width: 32px; }
 .cell .ix { font-size: 10.5px; color: var(--muted); }
-.trace { border-collapse: collapse; font-size: 12px; min-width: 100%; }
-.trace th { position: sticky; top: 0; background: var(--chip); text-align: left; padding: 3px 8px; border-bottom: 2px solid var(--border); white-space: nowrap; font: 700 11px var(--font-title); }
-.trace td { padding: 2px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-.trace tr.cur td { background: var(--accent-soft); font-weight: 600; }
-.trace td.chg { color: var(--accent); font-weight: 700; }
-.trace td.n { color: var(--muted); }
 
 /* output + goal */
 pre.out { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 13px; }
@@ -78,6 +72,4 @@ pre.out { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 1
 .goal ul { margin: 4px 0 0; padding-left: 18px; }
 .pad { padding: 10px 12px; }
 @media (max-width: 900px) { .controls input[type=range] { order: 9; flex: 1 1 100%; } .controls .count { margin-left: auto; } #hl, #code { font-size: 14px; } }
-
-/* narrow windows: the Examples menu takes the room it needs so "Examples & practice…" is readable */
-@media (max-width: 900px) { #examples { max-width: none; min-width: 0; flex: 1 1 100%; } }
+@media (max-width: 900px) { #p-input.tab-on { flex-basis: 110px; } }

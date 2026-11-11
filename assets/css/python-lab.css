@@ -114,9 +114,6 @@ svg.tarrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-e
 .fc-edge.seen .fc-line { stroke: var(--accent-bright); stroke-width: 2.4; }
 .fc-edge.last .fc-line { stroke: var(--good); stroke-width: 3.4; }
 
-/* Input box (stdin for input()) */
-#p-input { --pc: var(--c-code); }
-.stdin-box { flex: 1; min-height: 0; width: 100%; border: 0; outline: 0; resize: none; background: transparent; color: var(--text); font-size: 13px; line-height: 20px; padding: 8px 10px; white-space: pre; overflow: auto; }
 
 /* Narrow windows (Chrome split view, tablets, phones): the bottom tab bar picks the boxes. With six boxes, give each visible one a
    usable minimum size and let the area scroll instead of squeezing everything into one screen. */

@@ -104,6 +104,7 @@ _KNOWN = {
     'set.union': '(*others)', 'set.update': '(*others)',
     'dict.clear': '()', 'dict.copy': '()', 'dict.items': '()', 'dict.keys': '()', 'dict.values': '()',
     'dict.update': '(other=(), /, **kwargs)',
+    'module.print': "(*args, sep=' ', end='\\n', file=None, flush=False)",       # older Pythons only document it as print(value, ..., sep=' ', ...)
 }
 
 

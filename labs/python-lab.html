@@ -14,15 +14,21 @@
 <link rel="stylesheet" href="../assets/css/dock.css">
 <link rel="stylesheet" href="../assets/css/python-lab.css">
 </head>
-<body>
+<body data-lab="python">
 <header>
   <span class="brand">Practice Lab <span class="by">@maduraigeorge</span></span>
   <nav class="labnav" aria-label="Labs"></nav>
-  <span id="status" class="status busy" role="status" aria-live="polite">Loading Python… (first load takes a few seconds)</span>
   <span class="spacer"></span>
-  <select id="examples" aria-label="Example programs"></select>
+  <span id="status" class="status busy" role="status" aria-live="polite">Loading Python… (first load takes a few seconds)</span>
   <button id="stopBtn" class="danger" hidden title="Stop the running program">⏹ Stop</button>
-  <button id="reset" title="Clear the editor">Clear</button>
+  <span class="popwrap">
+    <button id="gearBtn" class="gear" type="button" title="Settings: examples, layout, clear" aria-label="Settings" aria-haspopup="true">⚙</button>
+    <div class="popover settings" id="gearPop" hidden>
+      <div class="setrow"><span>Examples</span><select id="examples" aria-label="Example programs"></select></div>
+      <div class="setrow" id="setLayoutRow"><span>Layout</span></div>
+      <div class="setrow"><button id="reset" title="Clear the editor">Clear code</button></div>
+    </div>
+  </span>
 </header>
 
 <div class="controls gbar" id="gbar" role="group" aria-label="Step controls (apply to every box)">
@@ -54,7 +60,7 @@
   </section>
 
   <section class="panel" id="p-visual">
-    <h2><span class="num">4</span>Visual <span class="right"><span class="vtabs" role="tablist"><button class="mini on" data-v="tutor" role="tab" title="Frames and objects with arrows, like Python Tutor">Frames</button><button class="mini" data-v="cards" role="tab" title="One card per variable">Cards</button></span></span></h2>
+    <h2><span class="num">4</span>Visual <span class="right"><span class="vtabs" role="tablist"><button class="mini on" data-v="tutor" role="tab" title="Frames and objects with arrows, like Python Tutor">Frames</button><button class="mini" data-v="cards" role="tab" title="One card per variable">Cards</button><button class="mini" data-v="trace" role="tab" title="One row per step: the value of every variable after that step">Trace table</button></span></span></h2>
     <div class="body" id="visual"><span class="empty">Variables will appear here.</span></div>
   </section>
 

@@ -14,23 +14,28 @@
 <link rel="stylesheet" href="../assets/css/dock.css">
 <link rel="stylesheet" href="../assets/css/sql-lab.css">
 </head>
-<body>
+<body data-lab="sql">
 <header>
-  <span class="brand"><span class="by">@maduraigeorge</span></span>
+  <span class="brand">Practice Lab <span class="by">@maduraigeorge</span></span>
   <nav class="labnav" aria-label="Labs"></nav>
-  <button class="chip sand" id="conn" title="Database: connect a server, upload a file, create a schema or load the sample"><i></i><span id="connTxt">Sandbox</span></button>
-  <span class="status busy" id="status" role="status" aria-live="polite">Loading SQL engine…</span>
   <span class="spacer"></span>
-  <select id="examples" aria-label="Sample queries" hidden></select>
-  <select id="mode" aria-label="Write mode" title="What happens to INSERT / UPDATE / DELETE on a live database" hidden>
-    <option value="readonly">🔒 Read-only</option>
-    <option value="rollback">↩️ Try writes (rolled back)</option>
-    <option value="commit">⚠️ Commit changes</option>
-  </select>
+  <span class="status busy" id="status" role="status" aria-live="polite">Loading SQL engine…</span>
   <label class="chk" title="Re-run SELECT queries automatically as you type (always off for live databases until you tick it)"><input type="checkbox" id="auto" checked> Live</label>
-  <button id="explainBtn" title="Show the database's own execution plan">Explain</button>
   <button id="restoreSql" hidden title="Go back to the query that was in the editor before a table or sample query replaced it (click again to come back)">↩ Previous query</button>
   <button id="run" class="primary" title="Run (Ctrl+Enter). Runs the selection if you highlighted text. Tab accepts a suggestion.">▶ Run</button>
+  <span class="popwrap">
+    <button id="gearBtn" class="gear" type="button" title="Settings: database, write mode, sample queries, layout" aria-label="Settings" aria-haspopup="true">⚙</button>
+    <div class="popover settings" id="gearPop" hidden>
+      <div class="setrow"><span>Database</span><button class="chip sand" id="conn" title="Database: connect a server, upload a file, create a schema or load the sample"><i></i><span id="connTxt">Sandbox</span></button></div>
+      <div class="setrow"><span>Write mode</span><select id="mode" aria-label="Write mode" title="What happens to INSERT / UPDATE / DELETE on a live database" hidden>
+        <option value="readonly">🔒 Read-only</option>
+        <option value="rollback">↩️ Try writes (rolled back)</option>
+        <option value="commit">⚠️ Commit changes</option>
+      </select></div>
+      <div class="setrow"><span>Sample queries</span><select id="examples" aria-label="Sample queries" hidden></select></div>
+      <div class="setrow" id="setLayoutRow"><span>Layout</span></div>
+    </div>
+  </span>
 </header>
 
 <main>
@@ -53,7 +58,7 @@
   </section>
 
   <section class="panel" id="p-result">
-    <h2><span class="num">2</span>Live result <span class="right"><button class="mini" id="csv" disabled>Download CSV</button></span></h2>
+    <h2><span class="num">2</span>Live result <span class="right"><button class="mini" id="explainBtn" title="Show how the database will run this query (its own execution plan: table scans, indexes, join order)">Query plan</button><button class="mini" id="csv" disabled>Download CSV</button></span></h2>
     <div class="rtabs" id="rtabs" hidden></div>
     <div class="body flush" id="result"><div class="pad empty">Run a query to see rows here.</div></div>
     <div class="rmeta" id="rmeta" hidden></div>

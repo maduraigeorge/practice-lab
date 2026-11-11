@@ -180,17 +180,25 @@ def test_sql_runaway_query_is_stopped_and_database_survives(page, static_url):
     page.locator('#result .grid', has_text='12').wait_for(timeout=30_000)
 
 
+def choose(page, select, label):
+    """Pick a value in one of the lists that live in the gear (settings) menu: open the menu, choose, and the menu closes."""
+    if not page.locator('#gearPop').is_visible():
+        page.click('#gearBtn')
+    page.select_option(select, label=label)
+    page.locator('#gearPop').wait_for(state='hidden')
+
+
 # ------------------------------------------------------------------ Flowchart lab
 def test_flow_lab_chart_steps_and_practice(page, static_url):
     page.goto(f'{static_url}/labs/flow-lab.html')
     page.locator('#status.ok').wait_for(timeout=30_000)
     assert page.locator('.fc-node').count() >= 8
-    page.select_option('#examples', label='Grade (IF / ELSE IF)')
+    choose(page, '#examples', 'Grade (IF / ELSE IF)')
     page.locator('#output', has_text='Grade: B').wait_for(timeout=10_000)
     page.click('#first')
     page.click('#next')
     assert page.locator('.fc-node.active').count() == 1
-    page.select_option('#examples', label='🎯 Even or odd')
+    choose(page, '#examples', '🎯 Even or odd')
     page.locator('.goal .fail').wait_for(timeout=10_000)
     set_code(page, 'INPUT n\nIF n MOD 2 = 0 THEN\n  OUTPUT "even"\nELSE\n  OUTPUT "odd"\nENDIF\n')
     page.locator('.goal .pass').wait_for(timeout=10_000)
@@ -217,7 +225,7 @@ def test_shell_switches_labs_and_keeps_state(page, static_url):
     page.locator('#fr-sql.on').wait_for(state='visible', timeout=15_000)
     sq = page.frame_locator('#fr-sql')
     sq.locator('#status.ok').wait_for(timeout=60_000)
-    sq.locator('.labnav a', has_text='Flowchart').click()
+    sq.locator('.labnav a', has_text='Pseudocode').click()
     page.locator('#fr-flow.on').wait_for(state='visible', timeout=15_000)
     assert page.url.endswith('#flow')
     page.frame_locator('#fr-flow').locator('.labnav a', has_text='Python').click()
@@ -227,7 +235,7 @@ def test_shell_switches_labs_and_keeps_state(page, static_url):
 
 def test_dock_presets_minimise_and_persistence(page, static_url):
     python_ready(page, static_url)
-    page.select_option('#layoutSel', label='Code focus')
+    choose(page, '#layoutSel', 'Code focus')
     boxes = page.evaluate("[...document.querySelectorAll('.panel')].map(p => { const r = p.getBoundingClientRect(); return [r.width, r.height]; })")
     assert all(w > 80 and h > 60 for w, h in boxes)
     page.click('#p-result [data-a=min]')
@@ -245,9 +253,24 @@ def test_phone_layout_has_tabs_and_no_sideways_scroll(page, static_url, lab):
     page.goto(f'{static_url}/labs/{lab}.html')
     page.locator('#status').wait_for(timeout=60_000)
     page.wait_for_timeout(1500)
-    assert page.locator('.panel:visible').count() == 1
+    assert page.locator('.panel:visible').count() == 2                # Code and Output are shown first; the tab bar adds or removes boxes
     assert page.locator('#tabs').is_visible()
     assert not page.evaluate('document.documentElement.scrollWidth > innerWidth')
+
+
+def test_python_trace_table_grows_with_the_steps(page, static_url):
+    python_ready(page, static_url)
+    set_code(page, 'total = 0\nfor i in range(3):\n    total += i\n')
+    page.locator('#steps', has_text='total').wait_for(timeout=30_000)
+    page.click('.vtabs button[data-v=trace]')
+    heads = page.locator('#visual table.trace th').all_inner_texts()
+    assert heads[:2] == ['#', 'Line'] and 'total' in heads and 'i' in heads
+    page.click('#first')
+    assert page.locator('#visual tbody tr:visible').count() == 1          # only the rows up to the current step show
+    page.click('#last')
+    assert page.locator('#visual tbody tr:visible').count() == page.locator('#visual tbody tr').count() > 3
+    page.click('#visual tbody tr >> nth=2')                              # clicking a row jumps to that step
+    assert page.inner_text('#count').startswith('3 /')
 
 
 # ------------------------------------------------------------------ XSS: hostile text must stay text
