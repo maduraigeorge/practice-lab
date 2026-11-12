@@ -117,6 +117,13 @@ _BINOPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
            ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod, ast.Pow: operator.pow,
            ast.BitAnd: operator.and_, ast.BitOr: operator.or_, ast.BitXor: operator.xor,
            ast.LShift: operator.lshift, ast.RShift: operator.rshift}
+def _locals(frame):
+    """Local namespace of a frame. A module frame's locals ARE its globals, so read them directly: touching
+    frame.f_locals from a trace function makes CPython 3.12 (Pyodide) write None back into the hidden loop
+    variables of an inlined comprehension ("assigning None to unbound local")."""
+    return frame.f_globals if frame.f_code.co_name == '<module>' else frame.f_locals
+
+
 _CMPOPS = {ast.Eq: operator.eq, ast.NotEq: operator.ne, ast.Lt: operator.lt, ast.LtE: operator.le,
            ast.Gt: operator.gt, ast.GtE: operator.ge, ast.In: lambda a, b: a in b, ast.NotIn: lambda a, b: a not in b,
            ast.Is: operator.is_, ast.IsNot: operator.is_not}
@@ -500,7 +507,7 @@ def line_notes(stmt, frame, code):
     """Short explanations of the interesting pieces of one statement (max 4)."""
     out = []
     try:
-        env = (frame.f_locals, frame.f_globals)
+        env = (_locals(frame), frame.f_globals)
         field = _ROOT_FIELD.get(type(stmt))
         root = getattr(stmt, field, None) if field else None
         if isinstance(stmt, ast.AugAssign):
@@ -618,6 +625,7 @@ def run(code, stdin_text):
     state = {'events': 0, 'stack': [], 'trunc': False}
     pend = {}
     stmts = {}
+    comp_lines = set()   # lines holding a comprehension: their loop variables are hidden from the repeat detector
 
     class Out(io.StringIO):
         def write(self, t):
@@ -684,7 +692,7 @@ def run(code, stdin_text):
 
     def frame_sig(f):
         parts, total = [], 0
-        spaces = (f.f_locals,) if f.f_code.co_name == '<module>' else (f.f_locals, f.f_globals)
+        spaces = (f.f_globals,) if f.f_code.co_name == '<module>' else (_locals(f), f.f_globals)
         for ns in spaces:
             for k, v in list(ns.items()):
                 if k.startswith('__') or isinstance(v, type(sys)) or callable(v):
@@ -736,7 +744,7 @@ def run(code, stdin_text):
         n = state['events']
         if n > TRACE_LIMIT:
             return detach(frame)
-        if detect and event == 'line' and (n < 3000 or n % 4 == 0):
+        if detect and event == 'line' and frame.f_lineno not in comp_lines and (n < 3000 or n % 4 == 0):
             check_loop(frame)
         if event == 'call':
             if name in NOISE:
@@ -792,6 +800,8 @@ def run(code, stdin_text):
         for node in ast.walk(tree):
             if isinstance(node, ast.stmt):
                 stmts.setdefault(node.lineno, node)
+            elif isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+                comp_lines.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
     except (SyntaxError, ValueError, RecursionError, MemoryError) as e:
         et = type(e).__name__
         msg = getattr(e, 'msg', None) or ('The code is too deeply nested to read.' if et in ('RecursionError', 'MemoryError') else str(e))
